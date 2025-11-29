@@ -65,7 +65,7 @@ class FileLoader(object):
         g.label = label_dict[g.label]
         g.feas = torch.tensor([tag2index[tag] for tag in g.node_tags])
         g.feas = F.one_hot(g.feas, len(tagset))
-        A = torch.FloatTensor(nx.to_numpy_matrix(g))
+        A = torch.FloatTensor(nx.to_numpy_array(g))
         g.A = A + torch.eye(g.number_of_nodes())
         return g
 
