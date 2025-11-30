@@ -111,3 +111,4 @@ checkpoints/
 *.pyc
 .vscode/
 .DS_Store
+/paper/data/
