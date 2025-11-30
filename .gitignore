@@ -114,3 +114,6 @@ checkpoints/
 /paper/data/
 
 .idea
+
+ema/deforming_plate
+ema/deforming_plate/*
