@@ -5,23 +5,18 @@ import os
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from ema_data_loader_multi import load_all_trajectories
-from ema_unet import GNet_EMA
+from data_loader import load_all_trajectories
+from graph_unet_defplate import GNet_EMA
 
-# ----------------------------------------------------------------------
-# CONFIGURATION CONSTANTS (EDIT HERE INSTEAD OF CLI ARGS)
-# ----------------------------------------------------------------------
-
-# Dataset and trajectory selection
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
-TRAJ_INDEX = 1          # which trajectory to visualize
+TRAJ_INDEX = 0
 
 # Model checkpoint
-CHECKPOINT_PATH = "gnet_ema_multi.pt"
+CHECKPOINT_PATH = "old_models/gnet_ema_multi_1000epochs.pt"
 
 # Visualization settings
-T_STEP = 350              # time index t (visualize t -> t+1)
+T_STEP = 10              # time index t (visualize t -> t+1)
 ROLLOUT = True         # if True, run multi-step rollout
 ROLLOUT_STEPS = 10     # maximum number of rollout steps for multi-step visualization
 
@@ -30,24 +25,14 @@ class ArgsWrapper:
     pass
 
 
-# ------------------------------------------------------------
-# CONFIGURATION LOADING (SHARED WITH TRAINING)
-# ------------------------------------------------------------
-
-def load_config(config_path="config.yaml"):
-    """Load model and training configuration from YAML file."""
+def load_config(config_path):
+    """Load model and training configuration from YAML file, so that it's consistent."""
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
     return config
 
-def visualize_mesh_pair(
-    pos_true, pos_pred, cells,
-    stress_true=None, stress_pred=None,
-    node_type_true=None, node_type_pred=None,
-    title_true="Ground Truth",
-    title_pred="Prediction",
-    color_mode="stress"
-):
+def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, node_type_true, node_type_pred, title_true,
+    title_pred, color_mode):
     """
     Visualizzazione mesh + heatmap stress o node_type.
     """
@@ -364,7 +349,14 @@ def main():
     F_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
     model = GNet_EMA(F_in, 4, myargs).to(device)
-    model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=device))
+    state = torch.load(CHECKPOINT_PATH, map_location=device)
+
+    # Backwards compatibility: old checkpoints used "s_gcn" instead of "start_gcn"
+    if "s_gcn.proj.weight" in state:
+        state["start_gcn.proj.weight"] = state.pop("s_gcn.proj.weight")
+    if "s_gcn.proj.bias" in state:
+        state["start_gcn.proj.bias"] = state.pop("s_gcn.proj.bias")
+    model.load_state_dict(state)
     model.eval()
 
     # ---------------------- ONE-STEP PREDICTION ----------------------
@@ -454,21 +446,10 @@ def main():
         stress_pred = stress_pred_list[k]
         node_type_pred = node_type_pred_list[k]
 
-        visualize_mesh_pair(
-            pos_true=coords_true,
-            pos_pred=coords_pred,
-            stress_true=stress_true,
-            stress_pred=stress_pred,
-            node_type_true=node_type_true,
-            node_type_pred=node_type_pred,
-            cells=cells,
-            color_mode="stress",
-            title_true=f"Ground Truth t={t+1+k}",
-            title_pred=f"Prediction t={t+1+k}"
-        )
-
-
-
+        visualize_mesh_pair(pos_true=coords_true, pos_pred=coords_pred, stress_true=stress_true,
+            stress_pred=stress_pred, node_type_true=node_type_true, node_type_pred=node_type_pred,
+            cells=cells, color_mode="stress", title_true=f"Ground Truth t={t+1+k}",
+            title_pred=f"Prediction t={t+1+k}")
 
 if __name__ == "__main__":
     main()

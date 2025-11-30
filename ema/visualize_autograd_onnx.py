@@ -23,10 +23,10 @@ from torchviz import make_dot
 import argparse
 import os
 
-from ema_unet import GNet_EMA
+from graph_unet_defplate import GNet_EMA
 
 
-def create_dummy_data(num_nodes=50, num_features=8, device='cpu'):
+def create_dummy_data(num_nodes, num_features, device):
     """
     Create dummy data that matches the expected input format.
     
@@ -78,7 +78,7 @@ def create_dummy_data(num_nodes=50, num_features=8, device='cpu'):
     return A, X_t, X_tp1
 
 
-def visualize_single_forward_pass(save_path='autograd_forward.pdf'):
+def visualize_single_forward_pass(save_path):
     """
     Visualize the forward pass computational graph.
     
@@ -126,7 +126,7 @@ def visualize_single_forward_pass(save_path='autograd_forward.pdf'):
     print(f"   Saved to: {save_path}")
 
 
-def visualize_backward_pass(save_path='autograd_backward.pdf'):
+def visualize_backward_pass(save_path):
     """
     Visualize the full computational graph including backward pass.
     
@@ -203,7 +203,7 @@ def visualize_backward_pass(save_path='autograd_backward.pdf'):
     print(f"   Saved to: {save_path}")
 
 
-def visualize_detailed_architecture(save_path='model_architecture.txt'):
+def visualize_detailed_architecture(save_path):
     """
     Create a detailed text representation of the model architecture.
     
@@ -295,7 +295,7 @@ def visualize_detailed_architecture(save_path='model_architecture.txt'):
     print(f"\nArchitecture details saved to: {save_path}")
 
 
-def export_onnx_graph(save_path='model_graph.onnx'):
+def export_onnx_graph(save_path):
     """
     Export the model to ONNX format for visualization.
     
@@ -420,16 +420,16 @@ def main():
         return
     
     # 1. Visualize forward pass
-    visualize_single_forward_pass('autograd_forward.pdf')
+    visualize_single_forward_pass('model_graphs/autograd_forward.pdf')
     
     # 2. Visualize backward pass with loss
-    visualize_backward_pass('autograd_backward.pdf')
+    visualize_backward_pass('model_graphs/autograd_backward.pdf')
     
     # 3. Create detailed architecture text
     visualize_detailed_architecture('model_architecture.txt')
     
     # 4. Export ONNX graph
-    export_onnx_graph('model_graph.onnx')
+    export_onnx_graph('model_graphs/model_graph.onnx')
     
     print("\n" + "=" * 60)
     print("VISUALIZATION COMPLETE!")

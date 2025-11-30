@@ -90,7 +90,7 @@ class Unpool(nn.Module):
 
 def top_k_graph(scores, g, h, k):
     num_nodes = g.shape[0]
-    values, idx = torch.topk(scores, max(2, int(k*num_nodes)))
+    values, idx = torch.topk(scores, max(2, int(k * num_nodes)))
     new_h = h[idx, :]
     values = torch.unsqueeze(values, -1)
     new_h = torch.mul(new_h, values)

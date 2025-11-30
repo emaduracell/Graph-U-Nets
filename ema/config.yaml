@@ -1,16 +1,17 @@
 # Model hyperparameters
 model:
-  act_n: "ELU"
-  act_c: "ELU"
-  l_dim: 128
-  h_dim: 256
-  ks: [0.9, 0.8, 0.7]
-  drop_n: 0.1
-  drop_c: 0.1
+  activation_gnn: "ELU"
+  activation_mlps_final: "ELU"
+  hid_gnn_layer_dim: 128
+  hid_mlp_dim: 256
+  k_pool_ratios: [0.9, 0.8, 0.7]
+  dropout_gnn: 0 # 0.1
+  dropout_mlps_final: 0 # 0.1
 
 # Training parameters
 training:
-  lr: 0.0001
+  lr: 0.001 # default = 1e-4
   epochs: 50
   batch_size: 4
+  shuffle: True
 

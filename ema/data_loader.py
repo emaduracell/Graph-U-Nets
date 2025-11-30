@@ -86,7 +86,7 @@ def build_edges_from_cells(cells, num_nodes):
     edge_list = sorted(edge_set)
     return torch.tensor(edge_list, dtype=torch.long)
 
-def load_all_trajectories(tfrecord_path, meta_path, max_trajs=None):
+def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
     """
     Load up to `max_trajs` trajectories from TFRecord.
 
