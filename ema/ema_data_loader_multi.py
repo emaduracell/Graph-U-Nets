@@ -170,8 +170,9 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs=None):
         # row-normalize
         A = A / A.sum(dim=1, keepdim=True)
 
-        # ensure cells is tensor
+        # ensure cells and node_type are tensors
         cells_t = torch.tensor(cells, dtype=torch.long)
+        node_type_t = torch.tensor(node_type.squeeze(-1), dtype=torch.long)  # [N]
 
         # STORE TRAJECTORY 
         list_of_trajs.append({
@@ -179,7 +180,8 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs=None):
             "X_seq_norm": X_seq_norm,
             "mean": mean,
             "std": std,
-            "cells": cells_t
+            "cells": cells_t,
+            "node_type": node_type_t
         })
 
         print(f"Loaded trajectory {traj_idx}, shape = {X_seq_norm.shape}")
