@@ -112,3 +112,5 @@ checkpoints/
 .vscode/
 .DS_Store
 /paper/data/
+
+.idea
