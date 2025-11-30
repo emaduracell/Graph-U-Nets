@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import yaml
 import os
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from ema_data_loader_multi import load_all_trajectories
 from ema_unet import GNet_EMA
@@ -168,80 +170,136 @@ def visualize_mesh_pair(
 
 # MULTI-STEP ROLLOUT (USING VELOCITY PREDICTIONS)
 
-def rollout(model, A, X_t_norm, mean, std, steps, node_type):
+def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
     """
-    Autoregressive rollout that integrates positions from predicted velocities.
+    Autoregressive rollout that:
+      - predicts plate velocities + stresses,
+      - keeps borders fixed (node_type == 6),
+      - drives rigid body (node_type == 1) with scripted (ground-truth) motion.
 
     Parameters
     ----------
     model : GNet_EMA
-        Current EMA model that predicts [vx, vy, vz, stress] in normalized space.
     A : Tensor [N,N]
         Adjacency matrix.
-    X_t_norm : Tensor [N,F]
-        Normalized features at initial time t.
+    X_seq_norm : Tensor [T,N,F]
+        Normalized feature sequence for this trajectory.
     mean, std : Tensors [1,1,F]
-        Normalization statistics for this trajectory.
+        Normalization stats.
+    t0 : int
+        Starting time index.
     steps : int
         Number of rollout steps.
     node_type : Tensor [N]
-        Integer node types for this mesh (used only for visualization).
+        Integer node types.
 
     Returns
     -------
     coords_pred_list : list of [N,3] np.arrays
-        Predicted world coordinates at each rollout step.
-    stress_pred_list : list of [N] np.arrays
-        Predicted stress (denormalized) at each rollout step.
+    stress_pred_list : list of [N]   np.arrays
     node_type_pred_list : list of [N] np.arrays
-        Node types used for visualization (copied from input node_type).
     """
 
-    device = X_t_norm.device
+    device = A.device
     mean_vec = mean[0, 0].to(device)  # [F]
-    std_vec = std[0, 0].to(device)    # [F]
+    std_vec  = std[0, 0].to(device)   # [F]
     node_type = node_type.to(device)  # [N]
+
+    # Masks
+    deform_mask = (node_type == 0)    # deformable plate
+    rigid_mask  = (node_type == 1)    # rigid body
+    border_mask = (node_type == 6)    # fixed borders
+
+    # ---------- initial state at t0 ----------
+    current_norm = X_seq_norm[t0].to(device)      # [N,F] or [1,N,F]
+    if current_norm.dim() == 3:
+        current_norm = current_norm[0]
+
+    current_phys = current_norm * std_vec + mean_vec  # [N,F]
+    # This is p_hat_0 := p_0 (ground truth at t0)
+    p_hat = current_phys[:, :3].clone()               # [N,3]
+
+    # Borders reference positions (fixed in time)
+    pos_border_ref = p_hat[border_mask].clone()       # [Nb,3]
 
     coords_pred_list = []
     stress_pred_list = []
     node_type_pred_list = []
 
-    current_norm = X_t_norm  # [N,F]
-
-    for _ in range(steps):
-
-        # 1) De-normalize current state to get physical features
-        current_phys = current_norm * std_vec + mean_vec  # [N,F]
-        pos_t = current_phys[:, :3]                       # [N,3]
-
-        # 2) Predict next-step normalized velocity + stress
+    for k in range(steps):
+        # ======================================================
+        # 1) Predict NORMALIZED velocity + stress
+        #    v_hat_k, sigma_hat_k from graph at time "k"
+        # ======================================================
         with torch.no_grad():
-            pred = model.rollout_step(A, current_norm)  # [N,4] (vx,vy,vz,stress) normalized
+            pred = model.rollout_step(A, current_norm)  # [N,4] normalized
 
-        vel_norm = pred[:, :3]    # [N,3]
-        stress_norm = pred[:, 3]  # [N]
+        vel_norm    = pred[:, :3]   # [N,3]
+        stress_norm = pred[:, 3]    # [N]
 
-        # 3) Denormalize velocity and stress
-        vel = vel_norm * std_vec[4:7] + mean_vec[4:7]      # [N,3]
-        stress = stress_norm * std_vec[7] + mean_vec[7]    # [N]
+        # Denormalize predicted velocity & stress (v_hat_k, sigma_hat_k)
+        vel_pred    = vel_norm * std_vec[4:7] + mean_vec[4:7]   # [N,3]
+        stress_pred = stress_norm * std_vec[7] + mean_vec[7]    # [N]
 
-        # 4) Integrate position with predicted velocity
-        pos_next = pos_t + vel                              # [N,3]
+        # ======================================================
+        # 2) p_hat_{k+1} from p_hat_k + v_hat_k (ONLY deformables)
+        # ======================================================
+        # Start p_hat_{k+1} as a copy of p_hat_k
+        p_hat_next = p_hat.clone()          # [N,3]
+        stress_next = stress_pred.clone()   # [N]
 
-        # 5) Store for visualization
-        coords_pred_list.append(pos_next.cpu().numpy())
-        stress_pred_list.append(stress.cpu().numpy())
-        node_type_pred_list.append(node_type.cpu().numpy())
+        # --- deformable plate nodes (node_type == 0) ---
+        # This line enforces the desired recurrence strictly:
+        #   p_hat_{k+1} = p_hat_k + v_hat_k  (for deformable nodes)
+        p_hat_next[deform_mask] = p_hat[deform_mask] + vel_pred[deform_mask]
 
-        # 6) Build next-step physical feature tensor
+        # ======================================================
+        # 3) Rigid body nodes: follow scripted (ground-truth) motion
+        #    at time t0 + 1 + k
+        # ======================================================
+        gt_norm_step = X_seq_norm[t0 + 1 + k].to(device)   # [N,F] or [1,N,F]
+        if gt_norm_step.dim() == 3:
+            gt_norm_step = gt_norm_step[0]
+
+        gt_phys_step = gt_norm_step * std_vec + mean_vec   # [N,F]
+        p_rigid_gt   = gt_phys_step[:, :3]                 # [N,3]
+        v_rigid_gt   = gt_phys_step[:, 4:7]                # [N,3]
+        s_rigid_gt   = gt_phys_step[:, 7]                  # [N]
+
+        # drive rigid nodes with GT
+        p_hat_next[rigid_mask]    = p_rigid_gt[rigid_mask]
+        vel_pred[rigid_mask]      = v_rigid_gt[rigid_mask]
+        stress_next[rigid_mask]   = s_rigid_gt[rigid_mask]
+
+        # ======================================================
+        # 4) Fixed borders: fixed positions + zero velocity
+        # ======================================================
+        p_hat_next[border_mask] = pos_border_ref
+        vel_pred[border_mask]   = 0.0  # explicitly zero velocity
+        # stress_next[border_mask] stays as model prediction
+
+        # ======================================================
+        # 5) Store p_hat_{k+1} for visualization
+        # ======================================================
+        coords_pred_list.append(p_hat_next.detach().cpu().numpy())
+        stress_pred_list.append(stress_next.detach().cpu().numpy())
+        node_type_pred_list.append(node_type.detach().cpu().numpy())
+
+        # ======================================================
+        # 6) Build physical features X_{k+1} from (p_hat_{k+1}, v_hat_k+rigid/border overrides)
+        # ======================================================
         X_next_phys = torch.zeros_like(current_phys)
-        X_next_phys[:, :3] = pos_next
-        X_next_phys[:, 3] = node_type.float()
-        X_next_phys[:, 4:7] = vel
-        X_next_phys[:, 7] = stress
+        X_next_phys[:, :3] = p_hat_next                # positions
+        X_next_phys[:, 3]  = node_type.float()         # node type
+        X_next_phys[:, 4:7] = vel_pred                 # velocity field
+        X_next_phys[:, 7]   = stress_next              # stress
 
-        # 7) Re-normalize for next input
+        # Re-normalize for next model input (graph at time k+1)
+        current_phys = X_next_phys
         current_norm = (X_next_phys - mean_vec) / std_vec
+
+        # Advance p_hat_k -> p_hat_{k+1}
+        p_hat = p_hat_next
 
     return coords_pred_list, stress_pred_list, node_type_pred_list
 
@@ -324,9 +382,10 @@ def main():
     coords_pred_list, stress_pred_list, node_type_pred_list = rollout(
         model=model,
         A=A,
-        X_t_norm=X_t_norm,
+        X_seq_norm=X_seq_norm,
         mean=mean,
         std=std,
+        t0=t,
         steps=1,
         node_type=node_type,
     )
@@ -365,9 +424,10 @@ def main():
     coords_pred_list, stress_pred_list, node_type_pred_list = rollout(
         model=model,
         A=A,
-        X_t_norm=X_t_norm,
+        X_seq_norm=X_seq_norm,
         mean=mean,
         std=std,
+        t0=t,
         steps=steps,
         node_type=node_type,
     )
@@ -381,7 +441,7 @@ def main():
             X_tp_k_norm = X_tp_k_norm[0]
 
         coords_true_norm = X_tp_k_norm[:, :3]
-        coords_true = coords_true_norm * std[:, :, :3] + mean[:, :, :3]
+        coords_true = coords_true_norm * std_vec[:3] + mean_vec[:3]
         coords_true = coords_true.cpu().numpy()
 
         # Ground-truth von Mises stress at this step
