@@ -7,10 +7,7 @@ from ema_data_loader_multi import load_all_trajectories
 from ema_datasetclass import EmaUnetDataset, collate_ema_unet
 from ema_unet import GNet_EMA
 
-
-# ------------------------------------------------------------
 # ARGUMENT PARSING
-# ------------------------------------------------------------
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -70,10 +67,7 @@ def train_gnet_ema():
     dataset = EmaUnetDataset(list_of_trajs)
 
     print(f"Total training pairs X_t→X_t+1: {len(dataset)}")
-
-    # --------------------------------------------------------
     # RANDOM 80/20 SAMPLE SPLIT
-    # --------------------------------------------------------
     total = len(dataset)
     perm = torch.randperm(total)
     split = int(0.8 * total)
@@ -96,10 +90,7 @@ def train_gnet_ema():
         shuffle=False,
         collate_fn=collate_ema_unet
     )
-
-    # --------------------------------------------------------
     # BUILD MODEL
-    # --------------------------------------------------------
     F_in = list_of_trajs[0]["X_seq_norm"].shape[2]  # feature dimension
 
     myargs = lambda: None
@@ -116,9 +107,7 @@ def train_gnet_ema():
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     loss_fn = torch.nn.MSELoss()
 
-    # --------------------------------------------------------
     # TRAINING LOOP
-    # --------------------------------------------------------
     print("\n=================================================")
     print(" TRAINING")
     print("=================================================\n")
@@ -181,9 +170,8 @@ def train_gnet_ema():
 
         print(f"[Epoch {epoch:03d}]  Train Loss: {avg_train:.6f}  |  Test Loss: {avg_test:.6f}")
 
-    # --------------------------------------------------------
     # SAVE CHECKPOINT
-    # --------------------------------------------------------
+    
     print(f"\nSaving model to {args.checkpoint}")
     torch.save(model.state_dict(), args.checkpoint)
 

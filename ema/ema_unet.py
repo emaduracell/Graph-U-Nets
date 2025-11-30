@@ -112,10 +112,7 @@ class GNet_EMA(nn.Module):
         x_pred : Tensor [N, F_out]
         """
         return self.embed([g], [x_t])[0]
-
-    # ------------------------------------------------------------------ #
     # Internal helpers
-    # ------------------------------------------------------------------ #
 
     def embed(self, gs, hs):
         """

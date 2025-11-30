@@ -3,10 +3,7 @@ import numpy as np
 import torch
 from tfrecord.reader import tfrecord_loader
 
-
-# ============================================================
 # 1) DECODIFICA RECORD RAW (NO TENSORFLOW)
-# ============================================================
 
 def decode_trajectory_from_record(record, meta):
     """
@@ -111,9 +108,6 @@ def load_raw_trajectory_from_tfrecord(tfrecord_path, meta, traj_index):
     raise IndexError(f"trajectory index {traj_index} out of range")
 
 
-# ============================================================
-# 2) COSTRUZIONE EDGES
-# ============================================================
 
 def build_edges_from_cells(cells, num_nodes):
     edge_set = set()
@@ -130,10 +124,7 @@ def build_edges_from_cells(cells, num_nodes):
     edge_list = sorted(edge_set)
     return torch.tensor(edge_list, dtype=torch.long)
 
-
-# ============================================================
 # 3) ASSEMBLAGGIO INPUT EGNN
-# ============================================================
 
 def trajectory_to_egnn_inputs(traj):
     world_pos = traj["world_pos"]   # (T,N,3)
@@ -176,11 +167,7 @@ def trajectory_to_egnn_inputs(traj):
 
     return coors_seq, feats_seq, edge_index
 
-
-# ============================================================
 # 4) WRAPPER FINALE
-# ============================================================
-
 def data_loader_egnn(tfrecord_path, meta_path, traj_index):
     with open(meta_path, "r") as f:
         meta = json.load(f)
@@ -188,11 +175,7 @@ def data_loader_egnn(tfrecord_path, meta_path, traj_index):
     traj_dict = load_raw_trajectory_from_tfrecord(tfrecord_path, meta, traj_index)
     return trajectory_to_egnn_inputs(traj_dict)
 
-
-# ============================================================
 # 5) TEST
-# ============================================================
-
 if __name__ == "__main__":
     tfrecord_path = "data/deforming_plate/train.tfrecord"
     meta_path = "data/deforming_plate/meta.json"

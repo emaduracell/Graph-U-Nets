@@ -7,9 +7,7 @@ from ema_unet import GNet_EMA
 from ema_utils.ema_helper import visualize_mesh_pair
 
 
-# ------------------------------------------------------------
 # PARSE ARGUMENTS
-# ------------------------------------------------------------
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -39,10 +37,7 @@ def get_args():
 class ArgsWrapper:
     pass
 
-
-# ------------------------------------------------------------
 # MULTI-STEP ROLLOUT
-# ------------------------------------------------------------
 
 def rollout(model, A, X_t_norm, mean, std, steps):
     """
@@ -64,29 +59,21 @@ def rollout(model, A, X_t_norm, mean, std, steps):
         with torch.no_grad():
             pred_norm = model.rollout_step(A, current_norm)  # [N,F]
 
-        # ----------------------------------------------
         # remove batch if needed
-        # ----------------------------------------------
         if pred_norm.dim() == 3:
             pred_norm = pred_norm[0]
 
-        # ----------------------------------------------
         # extract & denormalize coordinates
-        # ----------------------------------------------
         coords_pred_norm = pred_norm[:, :3]     # [N,3]
         coords_pred = coords_pred_norm * std[:, :, :3] + mean[:, :, :3]
         coords_pred = coords_pred.cpu().numpy()
 
-        # ----------------------------------------------
         # extract & denormalize stress
-        # ----------------------------------------------
         stress_pred_norm = pred_norm[:, 7]      # [N]
         stress_pred = stress_pred_norm * std[:, :, 7] + mean[:, :, 7]
         stress_pred = stress_pred.cpu().numpy()
 
-        # ----------------------------------------------
         # extract node_type (categorical)
-        # ----------------------------------------------
         node_type_pred = pred_norm[:, 3].cpu().numpy()
 
         # store
@@ -100,9 +87,7 @@ def rollout(model, A, X_t_norm, mean, std, steps):
     return coords_pred_list, stress_pred_list, node_type_pred_list
 
 
-# ------------------------------------------------------------
 # MAIN VISUALIZATION LOGIC
-# ------------------------------------------------------------
 
 def main():
     args = get_args()
