@@ -12,7 +12,7 @@ from graph_unet_defplate import GNet_EMA
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
 NUM_TRAIN_TRAJS = 1  # Load only the first K trajectories
-CHECKPOINT_PATH = "old_models/gnet_ema_multi_prev.pt"
+CHECKPOINT_PATH = "gnet_ema_multi.pt"
 
 
 def load_config(config_path):
@@ -69,7 +69,7 @@ def train_gnet_ema(device):
     dim_out_vel = 3
     dim_out_stress = 1
     model = GNet_EMA(dim_in, dim_out_vel, dim_out_stress, model_hyperparams).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=train_cfg['lr'])
+    optimizer = optim.Adam(model.parameters(), lr=train_cfg['lr'], weight_decay=train_cfg['weight_decay'])
     loss_fn = torch.nn.MSELoss()
 
     # Training loop

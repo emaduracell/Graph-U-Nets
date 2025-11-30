@@ -13,12 +13,13 @@ META_PATH = "data/meta.json"
 TRAJ_INDEX = 0
 
 # Model checkpoint
-CHECKPOINT_PATH = "old_models/gnet_ema_multi_1000epochs.pt"
+CHECKPOINT_PATH = "gnet_ema_multi.pt"
 
 # Visualization settings
-T_STEP = 10              # time index t (visualize t -> t+1)
-ROLLOUT = True         # if True, run multi-step rollout
-ROLLOUT_STEPS = 10     # maximum number of rollout steps for multi-step visualization
+T_STEP = 0  # time index t (visualize t -> t+1)
+ROLLOUT = True  # if True, run multi-step rollout
+ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
+
 
 # Wrapper for model args
 class ArgsWrapper:
@@ -31,8 +32,9 @@ def load_config(config_path):
         config = yaml.safe_load(f)
     return config
 
+
 def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, node_type_true, node_type_pred, title_true,
-    title_pred, color_mode):
+                        title_pred, color_mode):
     """
     Visualizzazione mesh + heatmap stress o node_type.
     """
@@ -112,7 +114,7 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
     # ---------------- TRUE MESH ----------------
     fig.add_trace(
         go.Mesh3d(
-            x=pos_true[:,0], y=pos_true[:,1], z=pos_true[:,2],
+            x=pos_true[:, 0], y=pos_true[:, 1], z=pos_true[:, 2],
             i=tri_i, j=tri_j, k=tri_k,
             intensity=intensity_true,
             colorscale=colorscale,
@@ -127,7 +129,7 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
     # ---------------- PRED MESH ----------------
     fig.add_trace(
         go.Mesh3d(
-            x=pos_pred[:,0], y=pos_pred[:,1], z=pos_pred[:,2],
+            x=pos_pred[:, 0], y=pos_pred[:, 1], z=pos_pred[:, 2],
             i=tri_i, j=tri_j, k=tri_k,
             intensity=intensity_pred,
             colorscale=colorscale,
@@ -187,25 +189,25 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
 
     device = A.device
     mean_vec = mean[0, 0].to(device)  # [F]
-    std_vec  = std[0, 0].to(device)   # [F]
+    std_vec = std[0, 0].to(device)  # [F]
     node_type = node_type.to(device)  # [N]
 
     # Masks
-    deform_mask = (node_type == 0)    # deformable plate
-    rigid_mask  = (node_type == 1)    # rigid body
-    border_mask = (node_type == 6)    # fixed borders
+    deform_mask = (node_type == 0)  # deformable plate
+    rigid_mask = (node_type == 1)  # rigid body
+    border_mask = (node_type == 6)  # fixed borders
 
     # ---------- initial state at t0 ----------
-    current_norm = X_seq_norm[t0].to(device)      # [N,F] or [1,N,F]
+    current_norm = X_seq_norm[t0].to(device)  # [N,F] or [1,N,F]
     if current_norm.dim() == 3:
         current_norm = current_norm[0]
 
     current_phys = current_norm * std_vec + mean_vec  # [N,F]
     # This is p_hat_0 := p_0 (ground truth at t0)
-    p_hat = current_phys[:, :3].clone()               # [N,3]
+    p_hat = current_phys[:, :3].clone()  # [N,3]
 
     # Borders reference positions (fixed in time)
-    pos_border_ref = p_hat[border_mask].clone()       # [Nb,3]
+    pos_border_ref = p_hat[border_mask].clone()  # [Nb,3]
 
     coords_pred_list = []
     stress_pred_list = []
@@ -219,19 +221,19 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
         with torch.no_grad():
             pred = model.rollout_step(A, current_norm)  # [N,4] normalized
 
-        vel_norm    = pred[:, :3]   # [N,3]
-        stress_norm = pred[:, 3]    # [N]
+        vel_norm = pred[:, :3]  # [N,3]
+        stress_norm = pred[:, 3]  # [N]
 
         # Denormalize predicted velocity & stress (v_hat_k, sigma_hat_k)
-        vel_pred    = vel_norm * std_vec[4:7] + mean_vec[4:7]   # [N,3]
-        stress_pred = stress_norm * std_vec[7] + mean_vec[7]    # [N]
+        vel_pred = vel_norm * std_vec[4:7] + mean_vec[4:7]  # [N,3]
+        stress_pred = stress_norm * std_vec[7] + mean_vec[7]  # [N]
 
         # ======================================================
         # 2) p_hat_{k+1} from p_hat_k + v_hat_k (ONLY deformables)
         # ======================================================
         # Start p_hat_{k+1} as a copy of p_hat_k
-        p_hat_next = p_hat.clone()          # [N,3]
-        stress_next = stress_pred.clone()   # [N]
+        p_hat_next = p_hat.clone()  # [N,3]
+        stress_next = stress_pred.clone()  # [N]
 
         # --- deformable plate nodes (node_type == 0) ---
         # This line enforces the desired recurrence strictly:
@@ -242,25 +244,25 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
         # 3) Rigid body nodes: follow scripted (ground-truth) motion
         #    at time t0 + 1 + k
         # ======================================================
-        gt_norm_step = X_seq_norm[t0 + 1 + k].to(device)   # [N,F] or [1,N,F]
+        gt_norm_step = X_seq_norm[t0 + 1 + k].to(device)  # [N,F] or [1,N,F]
         if gt_norm_step.dim() == 3:
             gt_norm_step = gt_norm_step[0]
 
-        gt_phys_step = gt_norm_step * std_vec + mean_vec   # [N,F]
-        p_rigid_gt   = gt_phys_step[:, :3]                 # [N,3]
-        v_rigid_gt   = gt_phys_step[:, 4:7]                # [N,3]
-        s_rigid_gt   = gt_phys_step[:, 7]                  # [N]
+        gt_phys_step = gt_norm_step * std_vec + mean_vec  # [N,F]
+        p_rigid_gt = gt_phys_step[:, :3]  # [N,3]
+        v_rigid_gt = gt_phys_step[:, 4:7]  # [N,3]
+        s_rigid_gt = gt_phys_step[:, 7]  # [N]
 
         # drive rigid nodes with GT
-        p_hat_next[rigid_mask]    = p_rigid_gt[rigid_mask]
-        vel_pred[rigid_mask]      = v_rigid_gt[rigid_mask]
-        stress_next[rigid_mask]   = s_rigid_gt[rigid_mask]
+        p_hat_next[rigid_mask] = p_rigid_gt[rigid_mask]
+        vel_pred[rigid_mask] = v_rigid_gt[rigid_mask]
+        stress_next[rigid_mask] = s_rigid_gt[rigid_mask]
 
         # ======================================================
         # 4) Fixed borders: fixed positions + zero velocity
         # ======================================================
         p_hat_next[border_mask] = pos_border_ref
-        vel_pred[border_mask]   = 0.0  # explicitly zero velocity
+        vel_pred[border_mask] = 0.0  # explicitly zero velocity
         # stress_next[border_mask] stays as model prediction
 
         # ======================================================
@@ -274,10 +276,10 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
         # 6) Build physical features X_{k+1} from (p_hat_{k+1}, v_hat_k+rigid/border overrides)
         # ======================================================
         X_next_phys = torch.zeros_like(current_phys)
-        X_next_phys[:, :3] = p_hat_next                # positions
-        X_next_phys[:, 3]  = node_type.float()         # node type
-        X_next_phys[:, 4:7] = vel_pred                 # velocity field
-        X_next_phys[:, 7]   = stress_next              # stress
+        X_next_phys[:, :3] = p_hat_next  # positions
+        X_next_phys[:, 3] = node_type.float()  # node type
+        X_next_phys[:, 4:7] = vel_pred  # velocity field
+        X_next_phys[:, 7] = stress_next  # stress
 
         # Re-normalize for next model input (graph at time k+1)
         current_phys = X_next_phys
@@ -302,11 +304,11 @@ def main():
     )
     traj = list_of_trajs[TRAJ_INDEX]
 
-    A = traj["A"]                # [N,N]
+    A = traj["A"]  # [N,N]
     X_seq_norm = traj["X_seq_norm"]  # [T,N,F]
-    mean = traj["mean"]          # [1,1,F]
-    std = traj["std"]            # [1,1,F]
-    cells = traj["cells"]        # [C,4]
+    mean = traj["mean"]  # [1,1,F]
+    std = traj["std"]  # [1,1,F]
+    cells = traj["cells"]  # [C,4]
     node_type = traj["node_type"]  # [N]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -320,10 +322,10 @@ def main():
     T = X_seq_norm.shape[0]
     t = T_STEP
     if not (0 <= t < T - 1):
-        raise ValueError(f"t must be in [0, {T-2}]")
+        raise ValueError(f"t must be in [0, {T - 2}]")
 
     X_t_norm = X_seq_norm[t]
-    X_tp_norm = X_seq_norm[t+1]
+    X_tp_norm = X_seq_norm[t + 1]
 
     # remove batch dim if needed
     if X_t_norm.dim() == 3:
@@ -338,17 +340,17 @@ def main():
     model_cfg = config["model"]
 
     myargs = ArgsWrapper()
-    myargs.act_n = model_cfg["act_n"]
-    myargs.act_c = model_cfg["act_c"]
-    myargs.l_dim = model_cfg["l_dim"]
-    myargs.h_dim = model_cfg["h_dim"]
-    myargs.ks = model_cfg["ks"]
-    myargs.drop_n = model_cfg["drop_n"]
-    myargs.drop_c = model_cfg["drop_c"]
+    myargs.activation_gnn = model_cfg["activation_gnn"]
+    myargs.activation_mlps_final = model_cfg["activation_mlps_final"]
+    myargs.hid_gnn_layer_dim = model_cfg["hid_gnn_layer_dim"]
+    myargs.hid_mlp_dim = model_cfg["hid_mlp_dim"]
+    myargs.k_pool_ratios = model_cfg["k_pool_ratios"]
+    myargs.dropout_gnn = model_cfg["dropout_gnn"]
+    myargs.dropout_mlps_final = model_cfg["dropout_mlps_final"]
 
-    F_in = X_seq_norm.shape[2]
+    dim_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
-    model = GNet_EMA(F_in, 4, myargs).to(device)
+    model = GNet_EMA(dim_in, 3, 1, myargs).to(device)
     state = torch.load(CHECKPOINT_PATH, map_location=device)
 
     # Backwards compatibility: old checkpoints used "s_gcn" instead of "start_gcn"
@@ -364,10 +366,10 @@ def main():
     mean_vec = mean[0, 0]
     std_vec = std[0, 0]
 
-    coords_true = X_tp_norm[:, :3] * std_vec[:3] + mean_vec[:3]   # [N,3]
+    coords_true = X_tp_norm[:, :3] * std_vec[:3] + mean_vec[:3]  # [N,3]
     pos_true = coords_true.cpu().numpy()
 
-    stress_true = X_tp_norm[:, 7] * std_vec[7] + mean_vec[7]      # [N] (von Mises stress)
+    stress_true = X_tp_norm[:, 7] * std_vec[7] + mean_vec[7]  # [N] (von Mises stress)
     stress_true = stress_true.cpu().numpy()
 
     # Use rollout with 1 step to integrate predicted velocities
@@ -403,9 +405,9 @@ def main():
             node_type_true=node_type_true,
             node_type_pred=node_type_pred,
             cells=cells,
-            color_mode="stress",   # or "node_type"
-            title_true=f"Ground Truth t={t+1}",
-            title_pred=f"Prediction t={t+1}"
+            color_mode="stress",  # or "node_type"
+            title_true=f"Ground Truth t={t + 1}",
+            title_pred=f"Prediction t={t + 1}"
         )
         return
 
@@ -447,9 +449,10 @@ def main():
         node_type_pred = node_type_pred_list[k]
 
         visualize_mesh_pair(pos_true=coords_true, pos_pred=coords_pred, stress_true=stress_true,
-            stress_pred=stress_pred, node_type_true=node_type_true, node_type_pred=node_type_pred,
-            cells=cells, color_mode="stress", title_true=f"Ground Truth t={t+1+k}",
-            title_pred=f"Prediction t={t+1+k}")
+                            stress_pred=stress_pred, node_type_true=node_type_true, node_type_pred=node_type_pred,
+                            cells=cells, color_mode="stress", title_true=f"Ground Truth t={t + 1 + k}",
+                            title_pred=f"Prediction t={t + 1 + k}")
+
 
 if __name__ == "__main__":
     main()

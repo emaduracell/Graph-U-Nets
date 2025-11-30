@@ -150,7 +150,7 @@ class GNet_EMA(nn.Module):
         :param X_t: Tensor
             [N, F_in]
 
-        :return x_pred: Tensor
+        :return preds_list: Tensor
             [N, F_out]
         """
         return self.embed(A, X_t)
@@ -167,6 +167,11 @@ class GNet_EMA(nn.Module):
         :returns preds: Tensor
             Tensor of prediction [B, N, F_out]
         """
+        # Single-graph case: tensors
+        if isinstance(adj_A_list, torch.Tensor):
+            # X_list is then a tensor [N, F_in]
+            return self.embed_one(adj_A_list, X_list)
+        # Batch case: list of tensors
         return [self.embed_one(A, X) for A, X in zip(adj_A_list, X_list)]
 
     def embed_one(self, g, h):
