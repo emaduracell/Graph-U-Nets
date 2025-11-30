@@ -91,7 +91,8 @@ def train_gnet_ema():
         collate_fn=collate_ema_unet
     )
     # BUILD MODEL
-    F_in = list_of_trajs[0]["X_seq_norm"].shape[2]  # feature dimension
+    F_in = list_of_trajs[0]["X_seq_norm"].shape[2]  # feature dimension (8: pos + node_type + vel + stress)
+    F_out = 4  # output dimension (3 velocity + 1 stress)
 
     myargs = lambda: None
     myargs.act_n = args.act_n
@@ -102,7 +103,7 @@ def train_gnet_ema():
     myargs.drop_n = args.drop_n
     myargs.drop_c = args.drop_c
 
-    model = GNet_EMA(F_in, F_in, myargs).to(device)
+    model = GNet_EMA(F_in, F_out, myargs).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     loss_fn = torch.nn.MSELoss()
@@ -129,8 +130,34 @@ def train_gnet_ema():
                 X_t = X_t.to(device)
                 X_tp1 = X_tp1.to(device)
 
-                pred = model.rollout_step(A, X_t)   # <-- NOW requires grad
-                loss = loss_fn(pred, X_tp1)
+                pred = model.rollout_step(A, X_t)   # [N, 4] (velocity + stress)
+                
+                # Extract node_type from input features (feature index 3)
+                node_type = X_t[:, 3]  # [N]
+                
+                # Create masks for filtering
+                # Velocity: only node_type == 0
+                vel_mask = (node_type == 0)  # [N]
+                # Stress: node_type == 0 or node_type == 6
+                stress_mask = (node_type == 0) | (node_type == 6)  # [N]
+                
+                # Extract targets
+                target_vel = X_tp1[:, 4:7]      # [N, 3]
+                target_stress = X_tp1[:, 7:8]   # [N, 1]
+                
+                # Extract predictions
+                pred_vel = pred[:, :3]          # [N, 3]
+                pred_stress = pred[:, 3:4]      # [N, 1]
+                
+                # Compute separate losses with masks
+                loss = 0.0
+                if vel_mask.sum() > 0:
+                    loss_vel = loss_fn(pred_vel[vel_mask], target_vel[vel_mask])
+                    loss = loss + loss_vel
+                
+                if stress_mask.sum() > 0:
+                    loss_stress = loss_fn(pred_stress[stress_mask], target_stress[stress_mask])
+                    loss = loss + loss_stress
 
                 batch_loss += loss
 
@@ -157,8 +184,34 @@ def train_gnet_ema():
                     X_t = X_t.to(device)
                     X_tp1 = X_tp1.to(device)
 
-                    pred = model.rollout_step(A, X_t)
-                    loss = loss_fn(pred, X_tp1)
+                    pred = model.rollout_step(A, X_t)  # [N, 4] (velocity + stress)
+                    
+                    # Extract node_type from input features (feature index 3)
+                    node_type = X_t[:, 3]  # [N]
+                    
+                    # Create masks for filtering
+                    # Velocity: only node_type == 0
+                    vel_mask = (node_type == 0)  # [N]
+                    # Stress: node_type == 0 or node_type == 6
+                    stress_mask = (node_type == 0) | (node_type == 6)  # [N]
+                    
+                    # Extract targets
+                    target_vel = X_tp1[:, 4:7]      # [N, 3]
+                    target_stress = X_tp1[:, 7:8]   # [N, 1]
+                    
+                    # Extract predictions
+                    pred_vel = pred[:, :3]          # [N, 3]
+                    pred_stress = pred[:, 3:4]      # [N, 1]
+                    
+                    # Compute separate losses with masks
+                    loss = 0.0
+                    if vel_mask.sum() > 0:
+                        loss_vel = loss_fn(pred_vel[vel_mask], target_vel[vel_mask])
+                        loss = loss + loss_vel
+                    
+                    if stress_mask.sum() > 0:
+                        loss_stress = loss_fn(pred_stress[stress_mask], target_stress[stress_mask])
+                        loss = loss + loss_stress
 
                     batch_loss += loss
 
