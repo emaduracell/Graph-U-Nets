@@ -7,7 +7,7 @@ class EmaUnetDataset(Dataset):
     def __init__(self, list_of_trajs):
         """
         list_of_trajs is a list where each item has:
-            A, X_seq_norm [T,N,F], mean, std, cells
+            A, X_seq_norm [T,N,F], mean, std, cells, node_type
         """
         self.samples = []
 
@@ -17,6 +17,7 @@ class EmaUnetDataset(Dataset):
             mean   = traj["mean"]
             std    = traj["std"]
             cells  = traj["cells"]
+            node_type = traj["node_type"]   # [N]
 
             T = X_seq.shape[0]
 
@@ -28,6 +29,7 @@ class EmaUnetDataset(Dataset):
                     "mean": mean,
                     "std": std,
                     "cells": cells,
+                    "node_type": node_type,
                     "traj_id": traj_id
                 })
 
@@ -43,12 +45,13 @@ class EmaUnetDataset(Dataset):
             s["mean"],      # [1,1,F]
             s["std"],       # [1,1,F]
             s["cells"],     # [C,4]
+            s["node_type"], # [N]
             s["traj_id"]
         )
 def collate_ema_unet(batch):
     """
     batch is a list of:
-      (A, X_t, X_tp1, mean, std, cells, traj_id)
+      (A, X_t, X_tp1, mean, std, cells, node_type, traj_id)
 
     We return lists, not tensors, because graphs have different sizes.
     """
@@ -59,15 +62,17 @@ def collate_ema_unet(batch):
     means = []
     stds = []
     cells_list = []
+    node_types = []
     traj_ids = []
 
-    for A, X_t, X_tp1, mean, std, cells, traj_id in batch:
+    for A, X_t, X_tp1, mean, std, cells, node_type, traj_id in batch:
         As.append(A)
         X_ts.append(X_t)
         X_tp1s.append(X_tp1)
         means.append(mean)
         stds.append(std)
         cells_list.append(cells)
+        node_types.append(node_type)
         traj_ids.append(traj_id)
 
-    return As, X_ts, X_tp1s, means, stds, cells_list, traj_ids
+    return As, X_ts, X_tp1s, means, stds, cells_list, node_types, traj_ids
