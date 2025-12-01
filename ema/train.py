@@ -18,7 +18,7 @@ from plots import make_final_plots
 # HARDCODED DATASE  T AND OUTPUT PATHS
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
-NUM_TRAIN_TRAJS = 1  # Load only the first K trajectories
+NUM_TRAIN_TRAJS = 7  # Load only the first K trajectories
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 PLOTS_DIR = os.path.join(os.path.dirname(__file__), "plots")
 
@@ -57,11 +57,10 @@ def compute_batch_metrics(preds_list, targets_list, node_types_list):
         mae_graph = 0.0
         if vel_mask.any():
             mae_graph += F.l1_loss(pred_vel[vel_mask], target_vel[vel_mask], reduction='sum').item()
-            count += vel_mask.sum().item() * 3 # 3 dimensions
-            
+            count += vel_mask.sum().item() * 3
         if stress_mask.any():
             mae_graph += F.l1_loss(pred_stress[stress_mask], target_stress[stress_mask], reduction='sum').item()
-            count += stress_mask.sum().item() * 1 # 1 dimension
+            count += stress_mask.sum().item() * 1 #
             
         total_mae += mae_graph
 
@@ -74,18 +73,16 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
     """
     print("Generating final evaluation plots...")
     
-    # 1. Activations (using a hook on one batch)
+    # activations (using a hook on one batch, in particular im keeping only the last graph)
     activations = {}
-    
     # Hook into the velocity_mlp input to get latent features
     handle = model.velocity_mlp.register_forward_hook(
         lambda m, i, o: activations.update({'latent_features': i[0].detach().cpu().numpy()})
     )
     
-    # 2. Collect Predictions and Targets
-    all_vel_preds = [] # List of [N, 3] arrays
+    all_vel_preds = []
     all_vel_targets = []
-    all_stress_preds = [] # List of [N, 1] arrays
+    all_stress_preds = []
     all_stress_targets = []
     
     model.eval()
@@ -98,11 +95,10 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
             
             # Forward
             _, preds_list = model(gs, hs, targets, node_types)
-            
             # Remove hook after first batch
             if i == 0:
                 handle.remove()
-            
+
             # Collect per graph
             for pred, target, nt in zip(preds_list, targets, node_types):
                 vel_mask = (nt == 0)
@@ -137,24 +133,13 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
         cat_stress_preds = np.zeros((0, 1))
         cat_stress_targets = np.zeros((0, 1))
         
-    # Prepare for plotting
-    # We pass list of arrays: [VelX, VelY, VelZ, Stress]
+    # Prepare for plotting: We pass list of arrays: [VelX, VelY, VelZ, Stress]
     final_preds = [cat_vel_preds[:, 0], cat_vel_preds[:, 1], cat_vel_preds[:, 2], cat_stress_preds[:, 0]]
     final_targets = [cat_vel_targets[:, 0], cat_vel_targets[:, 1], cat_vel_targets[:, 2], cat_stress_targets[:, 0]]
     
-    make_final_plots(
-        save_dir=PLOTS_DIR,
-        train_losses=train_losses,
-        val_losses=val_losses,
-        metric_name='MAE',
-        train_metrics=train_maes,
-        val_metrics=val_maes,
-        grad_norms=grad_norms,
-        model=model,
-        activations=activations,
-        predictions=final_preds,
-        targets=final_targets
-    )
+    make_final_plots(save_dir=PLOTS_DIR, train_losses=train_losses, val_losses=val_losses,
+        metric_name='MAE', train_metrics=train_maes, val_metrics=val_maes, grad_norms=grad_norms,
+        model=model, activations=activations, predictions=final_preds, targets=final_targets)
     
     print(f"Plots saved to {PLOTS_DIR}")
 
@@ -240,12 +225,10 @@ def train_gnet_ema(device):
             feat_t_mat_list = [X_t.to(device) for X_t in feat_t_mat_list]
             feat_tp1_mat_list = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
             node_types = [nt.to(device) for nt in node_types]
-            
+
+            optimizer.zero_grad()
             # One epoch
             batch_loss, preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
-            
-            # backprop
-            optimizer.zero_grad()
             batch_loss.backward()
             
             # Compute grad norm
@@ -253,7 +236,6 @@ def train_gnet_ema(device):
             epoch_grad_norm += norm
             
             optimizer.step()
-            
             # Accumulate loss
             total_train_loss += batch_loss.item()
             
@@ -267,6 +249,7 @@ def train_gnet_ema(device):
         # Store epoch average grad norm
         if num_batches > 0:
             grad_norms.append(epoch_grad_norm / num_batches)
+            # if gradient clipping, measure after not before, and no .grad parameters are skipepd
         else:
             grad_norms.append(0.0)
 
@@ -301,12 +284,12 @@ def train_gnet_ema(device):
         train_maes.append(avg_train_mae)
         val_maes.append(avg_test_mae)
 
-        print(f"[Epoch {epoch:03d}]  Train Loss: {avg_train:.6f} (MAE: {avg_train_mae:.6f}) |  Test Loss: {avg_test:.6f} (MAE: {avg_test_mae:.6f})")
+        print(f"[Epoch {epoch:03d}]  Train Loss: {avg_train:.6f} (MAE: {avg_train_mae:.6f}) |  Test Loss: "
+              f"{avg_test:.6f} (MAE: {avg_test_mae:.6f})")
 
     print(f"\nSaving model to {CHECKPOINT_PATH}")
     torch.save(model.state_dict(), CHECKPOINT_PATH)
-    
-    # --- FINAL PLOTS ---
+    # Final plots
     run_final_evaluation(model, test_loader, device, train_losses, val_losses, train_maes, val_maes, grad_norms)
 
 

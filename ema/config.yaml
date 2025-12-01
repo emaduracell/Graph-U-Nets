@@ -5,13 +5,13 @@ model:
   hid_gnn_layer_dim: 128
   hid_mlp_dim: 256
   k_pool_ratios: [0.9, 0.8, 0.7]
-  dropout_gnn: 0 # 0.1
-  dropout_mlps_final: 0 # 0.1
+  dropout_gnn: 0.05 # 0.1
+  dropout_mlps_final: 0.05 # 0.1
 
 # Training parameters
 training:
-  lr: 0.0001 # default = 1e-4
-  epochs: 50
+  lr: 0.0005 # default = 1e-4
+  epochs: 700
   batch_size: 4
   shuffle: True
   weight_decay: 0

@@ -8,18 +8,28 @@ def make_final_plots(save_dir, train_losses, val_losses, metric_name, train_metr
     """
     Generates and saves the requested plots.
 
-    Args:
-        save_dir (str): Directory to save plots.
-        train_losses (list): List of training losses per epoch.
-        val_losses (list): List of validation losses per epoch.
-        metric_name (str): Name of the metric (e.g., 'MAE').
-        train_metrics (list): List of training metrics per epoch.
-        val_metrics (list): List of validation metrics per epoch.
-        grad_norms (list): List of average gradient norms per epoch.
-        model (torch.nn.Module): The trained model.
-        activations (dict): Dictionary of {layer_name: numpy_array} for activation distributions.
-        predictions (numpy.ndarray): Predictions array of shape [N, D].
-        targets (numpy.ndarray): Targets array of shape [N, D].
+    :param save_dir: str
+        Directory to save plots.
+    :param train_losses: List
+        List of training losses per epoch.
+    :param val_losses: List
+        List of validation losses per epoch.
+    :param metric_name: str
+        Name of the metric (e.g., 'MAE').
+    :param train_metrics: List
+        List of training metrics per epoch.
+    :param val_metrics: List
+        List of validation metrics per epoch.
+    :param grad_norms: List
+        List of average gradient norms per epoch.
+    :param model: torch.nn.Module
+        The trained model.
+    :param activations: Dict
+        Dictionary of {layer_name: numpy_array} for activation distributions.
+    :param predictions: numpy.ndarray
+        Predictions array of shape [N, D].
+    :param targets: numpy.ndarray
+        Targets array of shape [N, D].
     """
     os.makedirs(save_dir, exist_ok=True)
 
@@ -30,10 +40,6 @@ def make_final_plots(save_dir, train_losses, val_losses, metric_name, train_metr
     plt.plot(epochs, val_losses, label='Val Loss')
     
     if train_metrics and val_metrics:
-        # Plot metrics on a secondary y-axis or normalized? 
-        # For simplicity, plotting on same axis if range is compatible, 
-        # otherwise consider subplots or secondary axis. 
-        # Assuming similar scale or just plotting them.
         plt.plot(epochs, train_metrics, label=f'Train {metric_name}', linestyle='--')
         plt.plot(epochs, val_metrics, label=f'Val {metric_name}', linestyle='--')
         
