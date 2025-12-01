@@ -18,7 +18,7 @@ from plots import make_final_plots
 # HARDCODED DATASE  T AND OUTPUT PATHS
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
-NUM_TRAIN_TRAJS = 7  # Load only the first K trajectories
+NUM_TRAIN_TRAJS = 6  # Load only the first K trajectories
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 PLOTS_DIR = os.path.join(os.path.dirname(__file__), "plots")
 
@@ -192,7 +192,6 @@ def train_gnet_ema(device):
     dim_out_stress = 1
     model = GNet_EMA(dim_in, dim_out_vel, dim_out_stress, model_hyperparams).to(device)
     optimizer = optim.Adam(model.parameters(), lr=train_cfg['lr'], weight_decay=train_cfg['weight_decay'])
-    loss_fn = torch.nn.MSELoss()
 
     # Training loop
     print("\n=================================================")

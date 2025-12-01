@@ -11,14 +11,14 @@ from graph_unet_defplate import GNet_EMA
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
 TRAJ_INDEX = 0
-
+OUTPUT_DIR = "simulation_rollout"
 # Model checkpoint
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 
 # Visualization settings
-T_STEP = 0  # time index t (visualize t -> t+1)
+T_STEP = 50  # time index t (visualize t -> t+1)
 ROLLOUT = True  # if True, run multi-step rollout
-ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
+ROLLOUT_STEPS = 400  # maximum number of rollout steps for multi-step visualization
 
 
 # Wrapper for model args
@@ -127,30 +127,23 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
     )
 
     # ---------------- PRED MESH ----------------
-    fig.add_trace(
-        go.Mesh3d(
-            x=pos_pred[:, 0], y=pos_pred[:, 1], z=pos_pred[:, 2],
+    fig.add_trace(go.Mesh3d(x=pos_pred[:, 0], y=pos_pred[:, 1], z=pos_pred[:, 2],
             i=tri_i, j=tri_j, k=tri_k,
             intensity=intensity_pred,
             colorscale=colorscale,
             showscale=True,
             flatshading=True,
             opacity=1.0,
-            name="pred_mesh"
-        ),
-        row=1, col=2
-    )
+            name="pred_mesh"), row=1, col=2)
 
     # ======================================================
     # 5) SETTINGS
     # ======================================================
     fig.update_scenes(aspectmode="data")
-    fig.update_layout(
-        height=600,
+    fig.update_layout(height=600,
         width=1200,
         title_text="Mesh Comparison",
-        showlegend=False
-    )
+        showlegend=False)
 
     fig.show()
 
