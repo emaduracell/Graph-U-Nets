@@ -25,6 +25,7 @@ def _cast_to_bytes(value):
     else:
         raise TypeError(f"Unexpected type: {type(value)}")
 
+
 def _reshape_with_inferred_dim(arr, shape_spec):
     """
     Reshape arr according to shape_spec, where at most one entry may be -1 (to be inferred from arr.size).
@@ -44,7 +45,7 @@ def _reshape_with_inferred_dim(arr, shape_spec):
         known = int(np.prod([d for d in shape if d != -1])) or 1
         if arr.size % known != 0:
             raise ValueError(f"Cannot infer missing dimension: {arr.size} elements "
-                f"is not divisible by known product {known}")
+                             f"is not divisible by known product {known}")
         inferred = arr.size // known
         shape[shape.index(-1)] = inferred
     # sanity check
@@ -55,6 +56,7 @@ def _reshape_with_inferred_dim(arr, shape_spec):
         return arr
 
     return arr.reshape(shape)
+
 
 def cast_raw_array(value, dtype, shape_spec):
     """
@@ -84,6 +86,7 @@ def cast_raw_array(value, dtype, shape_spec):
     # Reshape
     converted_arr = _reshape_with_inferred_dim(converted_arr, shape_spec)
     return converted_arr
+
 
 def cast_trajectory_from_record(record, meta):
     """
@@ -146,7 +149,6 @@ def build_edges_from_cells(mesh_cells):
             if u != v:
                 edge_set.add((u, v))
                 edge_set.add((v, u))
-            # TODO NO SELF LOOPS?
 
     edge_list = sorted(edge_set)
     return torch.tensor(edge_list, dtype=torch.long)
@@ -178,13 +180,14 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
     # TFRecord loader
     loader = tfrecord_loader(tfrecord_path, index_path=None)
     list_of_trajs = []
-    idx = 0 # debug idx
-
+    idx = 0  # debug idx
+    sum_elements = 0
+    element_num = 0
     # Iterate through trajectories
     for traj_idx, record in enumerate(loader):
         # Stop if we reached max_trajs
         if max_trajs is not None and traj_idx >= max_trajs:
-            print("[load_all_trajectories] Reached maximum trajectories")
+            print("[load_all_trajectories] Reached wanted number of trajectories")
             break
 
         # DECODE RAW TRAJECTORY 
@@ -193,73 +196,94 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         stress = traj["stress"]  # (T,N,1)
         node_type = traj["node_type"]  # (N,1)
         mesh_cells = traj["cells"]  # (C,4)
-        if idx == 0:
-            print(f"type(traj) = {type(traj)}")
-            print(f"type(world_pos) = {type(world_pos)}, type(world_pos[0])={type(world_pos[0])}, "
-                  f"type(world_pos[0][0])={type(world_pos[0][0])})")
-            print(f"type(stress) = {type(stress)}, type(stress[0])={type(stress[0])}, "
-                  f"type(stress[0][0])={type(stress[0][0])})")
-            print(f"type(node_type) = {type(node_type)}, type(node_type[0])={type(node_type[0])}, "
-                  f"type(node_type[0][0])={type(node_type[0][0])})")
-            print(f"type(mesh_cells) = {type(mesh_cells)}, type(mesh_cells[0])={type(mesh_cells[0])}, "
-                  f"type(mesh_cells[0][0])={type(mesh_cells[0][0])})")
+        if idx == 0 or idx == 1 or idx == 2:
+            print(f"traj: \n \t type(traj) = {type(traj)}, len={len(traj)}")
+            print(f"world pos: \n"
+                  f"\t type(world_pos) = {type(world_pos)} \n \t type(world_pos[0])={type(world_pos[0])}, "
+                  f"\n \t type(world_pos[0][0])={type(world_pos[0][0])}) \n \t len(world_pos)={len(world_pos)} "
+                  f"\n \t len(world_pos[0])={len(world_pos[0])}")
+            print(f"stress: \n \t type(stress) = {type(stress)} \n \t type(stress[0])={type(stress[0])}, "
+                  f"\n \t type(stress[0][0])={type(stress[0][0])}) \n \t type(stress[0][0][0])={type(stress[0][0][0])})"
+                  f"\n \t len(stress)={len(stress)} \n \t len(stress[0])={len(stress[0])} "
+                  f"\n \t len(stress[0][0])={len(stress[0][0])}) ")
+            print(
+                f"node_type: \n \t type(node_type) = {type(node_type)} \n \t type(node_type[0])={type(node_type[0])}, "
+                f"\n \t type(node_type[0][0])={type(node_type[0][0])}) \n \t len(node_type)={len(node_type)} "
+                f"\n \t len(node_type[0])={len(node_type[0])}")
+            print(
+                f"mesh_cells \n \t type(mesh_cells) = {type(mesh_cells)} \n \t type(mesh_cells[0])={type(mesh_cells[0])}, "
+                f"\n \t type(mesh_cells[0][0])={type(mesh_cells[0][0])}) \n \t len(mesh_cells)={len(mesh_cells)} "
+                f"\n \t len(mesh_cells[0])={len(mesh_cells[0])}")
             idx += 1
 
-        T, N, _ = world_pos.shape
+        time_step_dim, number_of_nodes, _ = world_pos.shape
 
-        # BUILD VELOCITY 
-        vel = np.zeros((T, N, 3), dtype=np.float32)
-        for t in range(1, T):
+        # Build velocity
+        vel = np.zeros((time_step_dim, number_of_nodes, 3), dtype=np.float32)
+        for t in range(1, time_step_dim):
             vel[t] = world_pos[t] - world_pos[t - 1]
 
-        # BUILD FEATURE SEQUENCE Feature layout: [pos_x, pos_y, pos_z, node_type, vel_x, vel_y, vel_z, stress]
+        # Build feature sequence Feature layout: [pos_x, pos_y, pos_z, node_type, vel_x, vel_y, vel_z, stress]
         feats_list = []
-        node_type_f = node_type.astype(np.float32)
-
-        for t in range(T):
-            feats_t = np.concatenate([
-                    world_pos[t],
-                    node_type_f,
-                    vel[t],
-                    stress[t],
-                ],
-                axis=-1
-            )
+        node_type_floatcast = node_type.astype(np.float32)
+        for t in range(time_step_dim):
+            feats_t = np.concatenate([world_pos[t], node_type_floatcast, vel[t], stress[t]], axis=-1)
             feats_list.append(feats_t)
-
         X_seq = torch.tensor(np.stack(feats_list, axis=0), dtype=torch.float32)
+        # print(f"X_seq.shape={X_seq.shape}")
 
-        # NORMALIZATION PER TRAJECTORY TODO FIX IT ACROSS DATASET
-        mean = X_seq.mean(dim=(0, 1), keepdim=True)
-        std = X_seq.std(dim=(0, 1), keepdim=True)
-        X_seq_norm = (X_seq - mean) / std
+        sum_elements = sum_elements + X_seq.sum(dim=(0, 1))
+        element_num = element_num + X_seq.shape[0] * X_seq.shape[1]
 
-        # Adjacency matrix
+        # Build adjacency matrix from set + add self loops + row normalize
         edge_index = build_edges_from_cells(mesh_cells)
-
-        A = torch.zeros((N, N), dtype=torch.float32)
+        A = torch.zeros((number_of_nodes, number_of_nodes), dtype=torch.float32)
         for e in edge_index:
             A[e[0], e[1]] = 1.0
-
-        # add self-loops
-        A = A + torch.eye(N)
-        # row-normalize
+        A = A + torch.eye(number_of_nodes)
+        # adj_sanity(A, mesh_cells)
         A = A / A.sum(dim=1, keepdim=True)
-        # ensure cells and node_type are tensors
-        cells_t = torch.tensor(mesh_cells, dtype=torch.long)
-        node_type_t = torch.tensor(node_type.squeeze(-1), dtype=torch.long)
-
-        # Store trajectory in the trajectory list
+        # sanity checks before normalization
+        row_sums = A.sum(dim=1)
+        if not torch.allclose(row_sums, torch.ones_like(row_sums), atol=1e-5):
+            print(f"[load_all_trajectories] BAD A just built for traj {traj_idx}")
+            print("  min row sum:", row_sums.min().item())
+            print("  max row sum:", row_sums.max().item())
+            # Optionally inspect mesh_cells as well
+            print("  mesh_cells shape:", mesh_cells.shape)
+            print("  max index in mesh_cells:", mesh_cells.max())
+            print("  number_of_nodes:", number_of_nodes)
+            raise RuntimeError("Adjacency normalization failed immediately after construction.")
+        # ensure cells and node_type are tensors, passing them to plot border and sphere separately (not predicted)
+        cells_tensor = torch.tensor(mesh_cells, dtype=torch.long)
+        node_type_tensor = torch.tensor(node_type.squeeze(-1), dtype=torch.long)
         list_of_trajs.append({
             "A": A,
-            "X_seq_norm": X_seq_norm,
-            "mean": mean,
-            "std": std,
-            "cells": cells_t,
-            "node_type": node_type_t
+            "X_seq_norm": X_seq,
+            "mean": 0,
+            "std": 0,
+            "cells": cells_tensor,  # passing them to plot border and sphere separately (not predicted)
+            "node_type": node_type_tensor  # passing them to plot border and sphere separately (not predicted)
         })
+        # print(f"Loaded trajectory {traj_idx}")
 
-        print(f"Loaded trajectory {traj_idx}, shape = {X_seq_norm.shape}")
+    mean = sum_elements / element_num
+    std_acc = torch.zeros_like(mean)
+    for traj in list_of_trajs:
+        X = traj['X_seq_norm']
+        std_acc += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
+
+    std_dev = torch.sqrt(std_acc / (element_num - 1))
+
+    mean_b = mean.view(1, 1, -1)
+    std_b = std_dev.view(1, 1, -1)
+    for traj in list_of_trajs:
+        traj['mean'] = mean_b
+        traj['std'] = std_b
+        X = traj['X_seq_norm']
+        X_seq_norm = (X - mean_b) / std_b
+        traj['X_seq_norm'] = X_seq_norm
+
 
     print(f"\nLoaded {len(list_of_trajs)} trajectories.")
     return list_of_trajs

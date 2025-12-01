@@ -6,19 +6,15 @@ import yaml
 import os
 import numpy as np
 import sys
-
-# Ensure we can import from the current directory
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 from data_loader import load_all_trajectories
 from datasetclass import EmaUnetDataset, collate_ema_unet
 from graph_unet_defplate import GNet_EMA
 from plots import make_final_plots
+from torch.optim.lr_scheduler import ExponentialLR
 
-# HARDCODED DATASE  T AND OUTPUT PATHS
+# HARDCODED DATASET AND OUTPUT PATHS
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
-NUM_TRAIN_TRAJS = 6  # Load only the first K trajectories
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 PLOTS_DIR = os.path.join(os.path.dirname(__file__), "plots")
 
@@ -87,7 +83,9 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
     
     model.eval()
     with torch.no_grad():
-        for i, (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids) in enumerate(test_loader):
+        for i, (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids) \
+                in enumerate(test_loader):
+            print(f"index trajectory = {traj_ids}, time = {feat_t_mat_list}")
             gs = [A.to(device) for A in adj_mat_list]
             hs = [X_t.to(device) for X_t in feat_t_mat_list]
             targets = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
@@ -152,6 +150,14 @@ def train_gnet_ema(device):
     # Extract model and training parameters
     model_cfg = config['model']
     train_cfg = config['training']
+    # Load train config
+    mode = train_cfg['mode']
+    start_lr = train_cfg['lr']
+    gamma_lr_scheduler = train_cfg['gamma_lr_scheduler']
+    adam_weight_decay = train_cfg['adam_weight_decay']
+    num_train_trajs = train_cfg['num_train_trajs']
+    batch_size = train_cfg['batch_size']
+    shuffle = train_cfg['shuffle']
     # load model configs from yaml
     model_hyperparams = lambda: None
     model_hyperparams.activation_gnn = model_cfg['activation_gnn']
@@ -167,13 +173,13 @@ def train_gnet_ema(device):
     print("=================================================\n")
     print(f"TFRecord: {TFRECORD_PATH}")
     print(f"Meta: {META_PATH}")
-    print(f"Max trajectories: {NUM_TRAIN_TRAJS if NUM_TRAIN_TRAJS else 'All'}")
+    print(f"Max trajectories: {num_train_trajs if num_train_trajs else 'All'}")
     # load trajectories (only first K if specified)
-    list_of_trajs = load_all_trajectories(TFRECORD_PATH, META_PATH, max_trajs=NUM_TRAIN_TRAJS)
+    list_of_trajs = load_all_trajectories(TFRECORD_PATH, META_PATH, max_trajs=num_train_trajs)
 
     # Build dataset from these trajectories
     dataset = EmaUnetDataset(list_of_trajs)
-    print(f"Total training pairs X_t --> X_t+1: {len(dataset)}")
+    print(f"Total training pairs (X_t, X_t+1): {len(dataset)}")
     # Random 80/20 split and then load data
     total = len(dataset)
     perm = torch.randperm(total)
@@ -182,16 +188,31 @@ def train_gnet_ema(device):
     test_idx = perm[split:]
     train_set = Subset(dataset, train_idx)
     test_set = Subset(dataset, test_idx)
-    train_loader = DataLoader(train_set, batch_size=train_cfg['batch_size'], shuffle=train_cfg['shuffle'],
+    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=shuffle,
                               collate_fn=collate_ema_unet)
-    test_loader = DataLoader(test_set, batch_size=train_cfg['batch_size'], shuffle=False, collate_fn=collate_ema_unet)
+    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, collate_fn=collate_ema_unet)
+    if mode == "overfit":
+        overfit_batch = next(iter(train_loader))
+        train_loader = [overfit_batch]
+        print(f"overfit_batch: \n \t type(overfit_batch) = {type(overfit_batch)} \n \t "
+              f"len(overfit_batch)={len(overfit_batch)}"
+              f"type(overfit_batch[0])={type(overfit_batch[0])}"
+              f"\n \t len(overfit_batch[0])={len(overfit_batch[0])} \n \t "
+              f"\n \t len(overfit_batch[0][0])={type(overfit_batch[0][0])} \n \t "
+              f"\n \t len(overfit_batch[0][0])={len(overfit_batch[0][0])} \n \t "
+              f"\n \t len(overfit_batch[0][0][0])={type(overfit_batch[0][0][0])} \n \t "
+              f"\n \t len(overfit_batch[0][0][0])={len(overfit_batch[0][0][0])} \n \t "
+              f"\n \t len(overfit_batch[0][0][0][0])={type(overfit_batch[0][0][0][0])} \n \t "
+              f"\n \t len(overfit_batch[0][0][0][0])={(overfit_batch[0][0][0][0].shape)} \n \t ")
+        test_loader = [overfit_batch]
 
     # Build model
     dim_in = list_of_trajs[0]["X_seq_norm"].shape[2]
     dim_out_vel = 3
     dim_out_stress = 1
     model = GNet_EMA(dim_in, dim_out_vel, dim_out_stress, model_hyperparams).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=train_cfg['lr'], weight_decay=train_cfg['weight_decay'])
+    optimizer = optim.Adam(model.parameters(), lr=start_lr, weight_decay=adam_weight_decay)
+    scheduler = ExponentialLR(optimizer, gamma=gamma_lr_scheduler)
 
     # Training loop
     print("\n=================================================")
@@ -199,7 +220,10 @@ def train_gnet_ema(device):
     print("=================================================\n")
     print(f"Epochs: {train_cfg['epochs']}")
     print(f"Batch size: {train_cfg['batch_size']}")
-    print(f"Learning rate: {train_cfg['lr']}\n")
+    print(f"Start learning rate: {start_lr}\n")
+    print(f"mode={mode}")
+    print(f"weight decay = {adam_weight_decay}")
+    print(f"number of trajectories on which I'm training = {num_train_trajs}")
 
     # History tracking
     train_losses = []
@@ -226,7 +250,7 @@ def train_gnet_ema(device):
             node_types = [nt.to(device) for nt in node_types]
 
             optimizer.zero_grad()
-            # One epoch
+            # One batch
             batch_loss, preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
             batch_loss.backward()
             
@@ -259,7 +283,8 @@ def train_gnet_ema(device):
         total_test_count = 0
         
         with torch.no_grad():
-            for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids in test_loader:
+            for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids \
+                    in test_loader:
                 gs = [A.to(device) for A in adj_mat_list]
                 hs = [X_t.to(device) for X_t in feat_t_mat_list]
                 targets = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
@@ -283,8 +308,11 @@ def train_gnet_ema(device):
         train_maes.append(avg_train_mae)
         val_maes.append(avg_test_mae)
 
-        print(f"[Epoch {epoch:03d}]  Train Loss: {avg_train:.6f} (MAE: {avg_train_mae:.6f}) |  Test Loss: "
-              f"{avg_test:.6f} (MAE: {avg_test_mae:.6f})")
+        # lr scheduler
+        scheduler.step()
+        current_lr = optimizer.param_groups[0]['lr']
+        print(f"[Train] [Epoch = {epoch:03d}]  Train Loss: {avg_train:.6f} (MAE: {avg_train_mae:.6f}) |  Test Loss: "
+              f"{avg_test:.6f} (MAE: {avg_test_mae:.6f}) | Lr = {current_lr}")
 
     print(f"\nSaving model to {CHECKPOINT_PATH}")
     torch.save(model.state_dict(), CHECKPOINT_PATH)
