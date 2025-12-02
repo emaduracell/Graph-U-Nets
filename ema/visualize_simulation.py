@@ -6,21 +6,22 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from data_loader import load_all_trajectories
-from graph_unet_defplate import GNet_EMA
+from graph_unet_defplate import Graph_Unet_DefPlate
 
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
 TRAJ_INDEX = 0
 OUTPUT_DIR = "simulation_rollout"
 # Model checkpoint
-# CHECKPOINT_PATH = "gnet_ema_multi.pt"
-CHECKPOINT_PATH = "plots_bad_3000epoch/gnet_ema_multi_bad_3000.pt"
+CHECKPOINT_PATH = "gnet_ema_multi.pt"
+# CHECKPOINT_PATH = "overfit_3000epoch/gnet_ema_multi_bad_3000.pt"
+# index trajectory = [0, 0, 0, 0], time = [284, 94, 83, 70]
 
 # 3000 index trajectory = [0, 0, 0, 0], time = [350, 222, 334, 135]
 # 1000 good index trajectory = [0, 0, 0, 0], time = [393, 162, 48, 174]
 
 # Visualization settings
-T_STEP = 135 # time index t (visualize t -> t+1)
+T_STEP = 83 # time index t (visualize t -> t+1)
 ROLLOUT = False  # if True, run multi-step rollout
 ROLLOUT_STEPS = 400  # maximum number of rollout steps for multi-step visualization
 
@@ -163,7 +164,7 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
 
     Parameters
     ----------
-    model : GNet_EMA
+    model : Graph_Unet_DefPlate
     A : Tensor [N,N]
         Adjacency matrix.
     X_seq_norm : Tensor [T,N,F]
@@ -347,7 +348,7 @@ def main():
 
     dim_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
-    model = GNet_EMA(dim_in, 3, 1, myargs).to(device)
+    model = Graph_Unet_DefPlate(dim_in, 3, 1, myargs).to(device)
     state = torch.load(CHECKPOINT_PATH, map_location=device)
 
     # Backwards compatibility: old checkpoints used "s_gcn" instead of "start_gcn"

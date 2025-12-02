@@ -1,5 +1,5 @@
 """
-Visualize the autograd computation graph for GNet_EMA model.
+Visualize the autograd computation graph for Graph_Unet_DefPlate model.
 
 This script creates multiple visualizations of the model architecture:
 1. PyTorch autograd graph (forward and backward pass)
@@ -23,7 +23,7 @@ from torchviz import make_dot
 import argparse
 import os
 
-from graph_unet_defplate import GNet_EMA
+from graph_unet_defplate import Graph_Unet_DefPlate
 
 
 def create_dummy_data(num_nodes, num_features, device):
@@ -106,7 +106,7 @@ def visualize_single_forward_pass(save_path):
     F_in = 8
     F_out = 4
     
-    model = GNet_EMA(F_in, F_out, args).to(device)
+    model = Graph_Unet_DefPlate(F_in, F_out, args).to(device)
     model.eval()  # Set to eval mode to disable dropout
     
     # Create dummy data
@@ -154,7 +154,7 @@ def visualize_backward_pass(save_path):
     F_in = 8
     F_out = 4
     
-    model = GNet_EMA(F_in, F_out, args).to(device)
+    model = Graph_Unet_DefPlate(F_in, F_out, args).to(device)
     model.train()  # Training mode
     
     # Create dummy data
@@ -229,11 +229,11 @@ def visualize_detailed_architecture(save_path):
     F_in = 8
     F_out = 4
     
-    model = GNet_EMA(F_in, F_out, args)
+    model = Graph_Unet_DefPlate(F_in, F_out, args)
     
     # Create detailed architecture string
     arch_str = []
-    arch_str.append("GNet_EMA Architecture")
+    arch_str.append("Graph_Unet_DefPlate Architecture")
     arch_str.append("=" * 60)
     arch_str.append(f"\nInput dimension: {F_in}")
     arch_str.append(f"Output dimension: {F_out}")
@@ -323,7 +323,7 @@ def export_onnx_graph(save_path):
     F_in = 8
     F_out = 4
     
-    model = GNet_EMA(F_in, F_out, args).to(device)
+    model = Graph_Unet_DefPlate(F_in, F_out, args).to(device)
     model.eval()
     
     # Create dummy input
@@ -406,7 +406,7 @@ def export_onnx_graph(save_path):
 def main():
     """Main visualization function."""
     print("\n" + "=" * 60)
-    print("AUTOGRAD GRAPH VISUALIZATION FOR GNet_EMA")
+    print("AUTOGRAD GRAPH VISUALIZATION FOR Graph_Unet_DefPlate")
     print("=" * 60)
     
     try:

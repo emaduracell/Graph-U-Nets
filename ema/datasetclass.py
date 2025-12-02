@@ -6,7 +6,7 @@ class EmaUnetDataset(Dataset):
 
     def __init__(self, list_of_trajs):
         """
-        Construct an instance.
+        Construct a batch from a list of trajectories objects.
 
         :param list_of_trajs: List
             a list where each item has (A, X_seq_norm, mean, std, cells, node_type)
@@ -37,9 +37,16 @@ class EmaUnetDataset(Dataset):
                 })
 
     def __len__(self):
+        """Returns the number of samples (trajectories)"""
         return len(self.samples)
 
     def __getitem__(self, idx):
+        """
+        Defines
+
+        :param idx:
+        :return:
+        """
         s = self.samples[idx]
         return (
             s["A"],
@@ -53,9 +60,9 @@ class EmaUnetDataset(Dataset):
             s["time_idx"]
         )
 
-def collate_ema_unet(batch):
+def collate_unet(batch):
     """
-    Given a batch, we return a tuple of lists of the components of the tuple instead
+    Given a batch, we return a tuple of lists of the components of the tuple instead.
 
     :param batch: List
         a list of tuples (A, X_t, X_tp1, mean, std, cells, node_type, traj_id)

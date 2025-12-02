@@ -7,10 +7,77 @@ import os
 import numpy as np
 import sys
 from data_loader import load_all_trajectories
-from datasetclass import EmaUnetDataset, collate_ema_unet
-from graph_unet_defplate import GNet_EMA
+from datasetclass import EmaUnetDataset, collate_unet
+from graph_unet_defplate import Graph_Unet_DefPlate
 from plots import make_final_plots
 from torch.optim.lr_scheduler import ExponentialLR
+
+BOUNDARY_NODE = 3
+NORMAL_NODE = 0
+
+def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
+    """
+    Computes loss per batch
+
+    :param adj_A_list:
+        batch adjacency matrix list
+    :param feat_tp1_mat_list:
+        feature matrix list
+    :param node_types_list:
+        node type list
+    :param preds_list:
+        list of predictions returned by forward
+
+    :return: (loss_batch_avgd, vel_loss_batch_avgd, stress_loss_batch_avgd)
+    """
+    # batch_adj_A, batch_feat_X, feat_tp1_mat_list, node_types
+    # Loss
+    total_loss = 0.0
+    total_vel_loss = 0.0
+    total_stress_loss = 0.0
+    num_graphs = len(adj_A_list)
+    for pred, target, nodetype in zip(preds_list, feat_tp1_mat_list, node_types_list):
+        # Create masks for filtering: FOR VEL mask OUT both the sphere and the boundary constraints
+        # FOR STRESS mask OUT only the sphere (calculate stress on BC)
+        vel_mask = (nodetype == NORMAL_NODE)  #
+        stress_mask = (nodetype == NORMAL_NODE) | (nodetype == BOUNDARY_NODE)
+        # Extract targets
+        target_vel = target[:, 4:7]
+        target_stress = target[:, 7:8]
+        # Extract predictions
+        pred_vel = pred[:, :3]
+        pred_stress = pred[:, 3:4]
+        # Loss per graph
+        loss_graph = 0.0
+        weight_stress = torch.count_nonzero(stress_mask) / (torch.count_nonzero(stress_mask) + \
+                                                            torch.count_nonzero(vel_mask))
+        weight_vel = torch.count_nonzero(vel_mask) / (torch.count_nonzero(stress_mask) + \
+                                                            torch.count_nonzero(vel_mask))
+        # print(f"type(vel_mask) = {type(vel_mask)} \t shape(vel_mask) = {vel_mask.shape} \t weight_vel = {weight_vel} "
+        #       f"\t {pred_vel[vel_mask].shape}")
+        # print(f"type(stress_mask) = {type(stress_mask)} \t shape(stress_mask) = {stress_mask.shape} weight_stress = "
+        #       f"\t {weight_stress} \t {pred_vel[stress_mask].shape}")
+        # print(f"boundaries = {(nodetype == BOUNDARY_NODE).any()}")
+
+        if vel_mask.any():
+            vel_loss = F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])
+            weighted_vel_loss = vel_loss * weight_vel
+            loss_graph = loss_graph + weighted_vel_loss
+            total_vel_loss = total_vel_loss + weighted_vel_loss
+            # print(f"\t \t Velocity loss = {F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])}")
+        if stress_mask.any():
+            stress_loss = F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])
+            weighted_stress_loss = weight_stress * stress_loss
+            loss_graph = loss_graph + weighted_stress_loss
+            total_stress_loss = total_stress_loss + weighted_stress_loss
+            # print(f"\t \t Stress loss = {F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])}")
+        # Total loss
+        total_loss = total_loss + loss_graph
+
+    loss_batch_avgd = total_loss / num_graphs
+    vel_loss_batch_avgd = total_vel_loss / num_graphs
+    stress_loss_batch_avgd = total_stress_loss / num_graphs
+    return loss_batch_avgd, vel_loss_batch_avgd, stress_loss_batch_avgd
 
 # HARDCODED DATASET AND OUTPUT PATHS
 TFRECORD_PATH = "data/train.tfrecord"
@@ -27,6 +94,13 @@ def load_config(config_path):
 
 
 def get_grad_norm(model):
+    """
+    Get gradient norm of current batch (L2)
+
+    :param model:
+        model object
+    :return: total norm of current batch
+    """
     total_norm = 0
     for p in model.parameters():
         if p.grad is not None:
@@ -63,9 +137,24 @@ def compute_batch_metrics(preds_list, targets_list, node_types_list):
     return total_mae, count
 
 
-def run_final_evaluation(model, test_loader, device, train_losses, val_losses, train_maes, val_maes, grad_norms):
+def run_final_evaluation(model, test_loader, device, train_losses, val_losses, train_maes, val_maes, grad_norms,
+                         train_vel_losses, train_stress_losses, test_vel_losses, test_stress_losses):
     """
     Runs the final evaluation loop, collects data, and calls the plotting function.
+
+    :param model:
+    :param test_loader:
+    :param device:
+    :param train_losses:
+    :param val_losses:
+    :param train_maes:
+    :param val_maes:
+    :param grad_norms:
+    :param train_vel_losses:
+    :param train_stress_losses:
+    :param test_vel_losses:
+    :param test_stress_losses:
+    :return:
     """
     print("Generating final evaluation plots...")
     
@@ -92,7 +181,7 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
             node_types = [nt.to(device) for nt in node_types]
             
             # Forward
-            _, preds_list = model(gs, hs, targets, node_types)
+            preds_list = model(gs, hs, targets, node_types)
             # Remove hook after first batch
             if i == 0:
                 handle.remove()
@@ -136,9 +225,11 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
     final_targets = [cat_vel_targets[:, 0], cat_vel_targets[:, 1], cat_vel_targets[:, 2], cat_stress_targets[:, 0]]
     
     make_final_plots(save_dir=PLOTS_DIR, train_losses=train_losses, val_losses=val_losses,
-        metric_name='MAE', train_metrics=train_maes, val_metrics=val_maes, grad_norms=grad_norms,
-        model=model, activations=activations, predictions=final_preds, targets=final_targets)
-    
+                     metric_name='MAE', train_metrics=train_maes, val_metrics=val_maes, grad_norms=grad_norms,
+                     model=model, activations=activations, predictions=final_preds, targets=final_targets,
+                     train_vel_losses=train_vel_losses, train_stress_losses=train_stress_losses,
+                     test_vel_losses=test_vel_losses, test_stress_losses=test_stress_losses)
+
     print(f"Plots saved to {PLOTS_DIR}")
 
 
@@ -171,9 +262,9 @@ def train_gnet_ema(device):
     print("\n=================================================")
     print(" LOADING TRAJECTORIES")
     print("=================================================\n")
-    print(f"TFRecord: {TFRECORD_PATH}")
-    print(f"Meta: {META_PATH}")
-    print(f"Max trajectories: {num_train_trajs if num_train_trajs else 'All'}")
+    print(f"\t TFRecord: {TFRECORD_PATH}")
+    print(f"\t Meta: {META_PATH}")
+    print(f"\t Max trajectories: {num_train_trajs if num_train_trajs else 'All'}")
     # load trajectories (only first K if specified)
     list_of_trajs = load_all_trajectories(TFRECORD_PATH, META_PATH, max_trajs=num_train_trajs)
 
@@ -188,17 +279,19 @@ def train_gnet_ema(device):
     test_idx = perm[split:]
     train_set = Subset(dataset, train_idx)
     test_set = Subset(dataset, test_idx)
+    # Create a data loader that respects batch size. One batch := a set of graphs, each corresponding to a couple
+    # (traj_id, time_id), such that #graphs = batch_size
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=shuffle,
-                              collate_fn=collate_ema_unet)
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, collate_fn=collate_ema_unet)
+                              collate_fn=collate_unet)
+    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, collate_fn=collate_unet)
     # train_loader = DataLoader(..., drop_last=True)
     # test_loader = DataLoader(..., drop_last=False)
 
     if mode == "overfit":
         overfit_batch = next(iter(train_loader))
         train_loader = [overfit_batch]
-        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list,
-        means, stds, cells, node_types, traj_ids, time_indices) = overfit_batch
+        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_indices) \
+            = overfit_batch
         print("Overfitting on the following (traj_id, time_idx) pairs:")
         for i, (tr, ti) in enumerate(zip(traj_ids, time_indices)):
             print(f"  sample {i:02d}: traj_id={int(tr)}, t={int(ti)}")
@@ -208,7 +301,7 @@ def train_gnet_ema(device):
     dim_in = list_of_trajs[0]["X_seq_norm"].shape[2]
     dim_out_vel = 3
     dim_out_stress = 1
-    model = GNet_EMA(dim_in, dim_out_vel, dim_out_stress, model_hyperparams).to(device)
+    model = Graph_Unet_DefPlate(dim_in, dim_out_vel, dim_out_stress, model_hyperparams).to(device)
     optimizer = optim.Adam(model.parameters(), lr=start_lr, weight_decay=adam_weight_decay)
     scheduler = ExponentialLR(optimizer, gamma=gamma_lr_scheduler)
 
@@ -216,17 +309,22 @@ def train_gnet_ema(device):
     print("\n=================================================")
     print(" TRAINING")
     print("=================================================\n")
-    print(f"Epochs: {train_cfg['epochs']}")
-    print(f"Batch size: {train_cfg['batch_size']}")
-    print(f"Start learning rate: {start_lr}\n")
-    print(f"mode={mode}")
-    print(f"weight decay = {adam_weight_decay}")
-    print(f"number of trajectories on which I'm training = {num_train_trajs}")
+    print(f"\t Epochs: {train_cfg['epochs']}")
+    print(f"\t Batch size: {train_cfg['batch_size']}")
+    print(f"\t Start learning rate: {start_lr}\n")
+    print(f"\t Mode: {mode}")
+    print(f"\t Weight decay = {adam_weight_decay}")
+    print(f"\t Number of trajectories on which I'm training = {num_train_trajs}")
+    print(f"\t len(train_loader) = {len(train_loader)} \t type(train_loader)={type(train_loader)}")
 
     # History tracking
     train_losses = []
     val_losses = []
     train_maes = []
+    train_vel_losses = []
+    train_stress_losses = []
+    test_vel_losses = []
+    test_stress_losses = []
     val_maes = []
     grad_norms = []
 
@@ -235,36 +333,42 @@ def train_gnet_ema(device):
         # Train phase
         model.train()
         total_train_loss = 0.0
+        total_train_vel_loss = 0.0
+        total_train_stress_loss = 0.0
         total_train_mae = 0.0
         total_train_count = 0
         
         epoch_grad_norm = 0.0
         num_batches = 0
 
-        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids in train_loader:
+        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids\
+                in train_loader:
             adj_mat_list = [A.to(device) for A in adj_mat_list]
             feat_t_mat_list = [X_t.to(device) for X_t in feat_t_mat_list]
             feat_tp1_mat_list = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
             node_types = [nt.to(device) for nt in node_types]
 
             optimizer.zero_grad()
-            # One batch
-            batch_loss, preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+            # One batch: forward and backprop
+            # batch_loss, preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+            preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+            batch_loss, vel_loss_batch_avgd, stress_loss_batch_avgd = compute_loss(adj_mat_list, feat_t_mat_list,
+                                                                                   node_types, preds_list)
             batch_loss.backward()
-            
             # Compute grad norm
             norm = get_grad_norm(model)
             epoch_grad_norm += norm
-            
+            # optimizer step
             optimizer.step()
-            # Accumulate loss
+            # Accumulate loss (item for extracting float from 0-dim tensor)
             total_train_loss += batch_loss.item()
-            
+            total_train_vel_loss += vel_loss_batch_avgd
+            total_train_stress_loss += stress_loss_batch_avgd
             # Compute MAE
             mae, count = compute_batch_metrics(preds_list, feat_tp1_mat_list, node_types)
             total_train_mae += mae
             total_train_count += count
-            
+            # batches count
             num_batches += 1
 
         # Store epoch average grad norm
@@ -277,6 +381,8 @@ def train_gnet_ema(device):
         # Evaluation
         model.eval()
         total_test_loss = 0.0
+        total_train_stress_loss = 0.0
+        total_train_vel_loss = 0.0
         total_test_mae = 0.0
         total_test_count = 0
         
@@ -288,7 +394,12 @@ def train_gnet_ema(device):
                 targets = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
                 node_types = [nt.to(device) for nt in node_types]
 
-                batch_loss, preds_list = model(gs, hs, targets, node_types)
+                preds_list = model(gs, hs, targets, node_types)
+                batch_loss, vel_loss_batch_avgd,stress_loss_batch_avgd = compute_loss(gs, targets, node_types,
+                                                                                      preds_list)
+
+                total_train_vel_loss += vel_loss_batch_avgd
+                total_train_stress_loss += stress_loss_batch_avgd
                 total_test_loss += batch_loss.item()
                 
                 mae, count = compute_batch_metrics(preds_list, targets, node_types)
@@ -297,11 +408,19 @@ def train_gnet_ema(device):
 
         avg_train = total_train_loss / len(train_loader)
         avg_test = total_test_loss / len(test_loader)
+        avg_train_stress_loss = total_train_stress_loss / len(test_loader)
+        avg_train_vel_loss = total_train_vel_loss / len(test_loader)
+        avg_test_stress_loss = total_train_stress_loss / len(test_loader)
+        avg_test_vel_loss = total_train_vel_loss / len(test_loader)
         
         avg_train_mae = total_train_mae / total_train_count if total_train_count > 0 else 0.0
         avg_test_mae = total_test_mae / total_test_count if total_test_count > 0 else 0.0
         
         train_losses.append(avg_train)
+        train_vel_losses.append(avg_train_vel_loss)
+        train_stress_losses.append(avg_train_stress_loss)
+        test_vel_losses.append(avg_test_vel_loss)
+        test_stress_losses.append(avg_test_stress_loss)
         val_losses.append(avg_test)
         train_maes.append(avg_train_mae)
         val_maes.append(avg_test_mae)
@@ -310,12 +429,13 @@ def train_gnet_ema(device):
         scheduler.step()
         current_lr = optimizer.param_groups[0]['lr']
         print(f"[Train] [Epoch = {epoch:03d}]  Train Loss: {avg_train:.6f} (MAE: {avg_train_mae:.6f}) |  Test Loss: "
-              f"{avg_test:.6f} (MAE: {avg_test_mae:.6f}) | Lr = {current_lr}")
+              f"{avg_test:.6f} (MAE: {avg_test_mae:.6f}) | Lr = {current_lr} | ")
 
     print(f"\nSaving model to {CHECKPOINT_PATH}")
     torch.save(model.state_dict(), CHECKPOINT_PATH)
     # Final plots
-    run_final_evaluation(model, test_loader, device, train_losses, val_losses, train_maes, val_maes, grad_norms)
+    run_final_evaluation(model, test_loader, device, train_losses, val_losses, train_maes, val_maes, grad_norms,
+                         train_vel_losses, train_stress_losses, test_vel_losses, test_stress_losses)
 
 
 if __name__ == "__main__":

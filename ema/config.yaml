@@ -5,17 +5,17 @@ model:
   hid_gnn_layer_dim: 128
   hid_mlp_dim: 256
   k_pool_ratios: [0.9, 0.8, 0.7]
-  dropout_gnn: 0 # 0.1
-  dropout_mlps_final: 0 # 0.1
+  dropout_gnn: 0 # default = 0.1, overfit = 0
+  dropout_mlps_final: 0 # default = 0.1, overfit = 0
 
 # Training parameters
 training:
-  lr: 0.008 # default = 1e-4
+  lr: 0.001 # default = 1e-4
   epochs: 1000
   batch_size: 4
-  shuffle: False
-  adam_weight_decay: 0
+  shuffle: True # False for overfitting?
+  adam_weight_decay: 0.0001 # default: 1e-4 | overfit = 0
   num_train_trajs: 1
-  mode: "overfit"
+  mode: None # None or "overfit"
   gamma_lr_scheduler: 0.9995 # lr_final = lr0 * gamma^epochs
 

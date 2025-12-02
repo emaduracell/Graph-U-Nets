@@ -275,6 +275,10 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
 
     std_dev = torch.sqrt(std_acc / (element_num - 1))
 
+    NODE_TYPE_IDX = 3
+    mean[NODE_TYPE_IDX] = 0.0
+    std_dev[NODE_TYPE_IDX] = 1.0
+
     mean_b = mean.view(1, 1, -1)
     std_b = std_dev.view(1, 1, -1)
     for traj in list_of_trajs:
@@ -284,8 +288,8 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         X_seq_norm = (X - mean_b) / std_b
         traj['X_seq_norm'] = X_seq_norm
 
-
-    print(f"\nLoaded {len(list_of_trajs)} trajectories.")
+    print(f"\nLoaded {len(list_of_trajs)} trajectories. "
+          f"")
     return list_of_trajs
 
 if __name__ == "__main__":

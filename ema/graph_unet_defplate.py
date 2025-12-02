@@ -4,10 +4,9 @@ import torch.nn.functional as F
 from original_paper_models_layers import GCN, GraphUnet, Initializer, norm_g
 
 
-class GNet_EMA(nn.Module):
+class Graph_Unet_DefPlate(nn.Module):
     """
-    Graph U-Net model for one-step graph-to-graph prediction:
-        (A, X_t) -> X_{t+1}
+    Graph U-Net model for one-step graph-to-graph prediction: (A, X_t) -> (velocity_vec_{t+1}, stress_{t+1})
 
     self.act_gnn: activation function used for the gcn layers
     self.act_mlps_final: activation function for the final MLPs for the prediction of stress and velocity
@@ -58,8 +57,8 @@ class GNet_EMA(nn.Module):
         # Graph U-Net
         self.g_unet = GraphUnet(
             ks=k_pool_ratios,
-            in_dim=hid_gnn_layer_dim,       # in_dim  (from s_gcn)
-            out_dim=hid_gnn_layer_dim,       # out_dim (unused in this impl, kept for API)
+            in_dim=hid_gnn_layer_dim,  # in_dim  (from s_gcn)
+            out_dim=hid_gnn_layer_dim,  # out_dim (unused in this impl, kept for API)
             dim=hid_gnn_layer_dim,
             act=self.act_gnn,
             drop_p=dropout_gnn
@@ -82,7 +81,6 @@ class GNet_EMA(nn.Module):
         )
 
         Initializer.weights_init(self)
-
 
     def forward(self, batch_adj_A, batch_feat_X, feat_tp1_mat_list, node_types):
         """
@@ -109,39 +107,9 @@ class GNet_EMA(nn.Module):
         """
         # Prediction
         preds_list = self.embed(batch_adj_A, batch_feat_X)
-        if feat_tp1_mat_list is None:
-            # Then we're doing only inference so we don't need to update the loss
-            return preds_list
         assert node_types is not None, "node_types must be provided when computing loss."
         assert len(batch_adj_A) == len(batch_feat_X) == len(feat_tp1_mat_list) == len(node_types)
-
-        # Loss
-        total_loss = 0.0
-        num_graphs = len(batch_adj_A)
-        for pred, target, nt in zip(preds_list, feat_tp1_mat_list, node_types):
-            # Create masks for filtering
-            vel_mask = (nt == 0)
-            stress_mask = (nt == 0) | (nt == 6)
-            # Extract targets
-            target_vel = target[:, 4:7]
-            target_stress = target[:, 7:8]
-            # Extract predictions
-            pred_vel = pred[:, :3]
-            pred_stress = pred[:, 3:4]
-            # Loss per graph
-            loss_graph = 0.0
-            if vel_mask.any():
-                loss_graph = loss_graph + F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])
-                # print(f"\t \t Velocity loss = {F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])}")
-            if stress_mask.any():
-                loss_graph = loss_graph + F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])
-                # print(f"\t \t Stress loss = {F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])}")
-            # Total loss
-            total_loss = total_loss + loss_graph
-
-        avg_loss = total_loss / num_graphs
-        return avg_loss, preds_list
-
+        return preds_list
 
     def rollout_step(self, A, X_t):
         """
@@ -178,7 +146,7 @@ class GNet_EMA(nn.Module):
 
     def embed_one(self, g, h):
         """
-        Process a single graph.
+        Process a single graph: apply initial GCN, full graph unet, final decoder.
 
         :param g: [N, N]
             adjacency matrix of the graph
