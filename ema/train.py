@@ -116,8 +116,8 @@ def compute_batch_metrics(preds_list, targets_list, node_types_list):
     count = 0
     
     for pred, target, nt in zip(preds_list, targets_list, node_types_list):
-        vel_mask = (nt == 0)
-        stress_mask = (nt == 0) | (nt == 6)
+        vel_mask = (nt == NORMAL_NODE)
+        stress_mask = (nt == NORMAL_NODE) | (nt == BOUNDARY_NODE)
         
         target_vel = target[:, 4:7]
         target_stress = target[:, 7:8]
@@ -352,7 +352,7 @@ def train_gnet_ema(device):
             # One batch: forward and backprop
             # batch_loss, preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
             preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
-            batch_loss, vel_loss_batch_avgd, stress_loss_batch_avgd = compute_loss(adj_mat_list, feat_t_mat_list,
+            batch_loss, vel_loss_batch_avgd, stress_loss_batch_avgd = compute_loss(adj_mat_list, feat_tp1_mat_list,
                                                                                    node_types, preds_list)
             batch_loss.backward()
             # Compute grad norm
@@ -381,8 +381,8 @@ def train_gnet_ema(device):
         # Evaluation
         model.eval()
         total_test_loss = 0.0
-        total_train_stress_loss = 0.0
-        total_train_vel_loss = 0.0
+        total_test_stress_loss = 0.0
+        total_test_vel_loss = 0.0
         total_test_mae = 0.0
         total_test_count = 0
         
@@ -398,8 +398,8 @@ def train_gnet_ema(device):
                 batch_loss, vel_loss_batch_avgd,stress_loss_batch_avgd = compute_loss(gs, targets, node_types,
                                                                                       preds_list)
 
-                total_train_vel_loss += vel_loss_batch_avgd
-                total_train_stress_loss += stress_loss_batch_avgd
+                total_test_vel_loss += vel_loss_batch_avgd
+                total_test_stress_loss += stress_loss_batch_avgd
                 total_test_loss += batch_loss.item()
                 
                 mae, count = compute_batch_metrics(preds_list, targets, node_types)
@@ -408,10 +408,10 @@ def train_gnet_ema(device):
 
         avg_train = total_train_loss / len(train_loader)
         avg_test = total_test_loss / len(test_loader)
-        avg_train_stress_loss = total_train_stress_loss / len(test_loader)
-        avg_train_vel_loss = total_train_vel_loss / len(test_loader)
-        avg_test_stress_loss = total_train_stress_loss / len(test_loader)
-        avg_test_vel_loss = total_train_vel_loss / len(test_loader)
+        avg_train_stress_loss = total_train_stress_loss / len(train_loader)
+        avg_train_vel_loss = total_train_vel_loss / len(train_loader)
+        avg_test_stress_loss = total_test_stress_loss / len(test_loader)
+        avg_test_vel_loss = total_test_vel_loss / len(test_loader)
         
         avg_train_mae = total_train_mae / total_train_count if total_train_count > 0 else 0.0
         avg_test_mae = total_test_mae / total_test_count if total_test_count > 0 else 0.0
@@ -429,7 +429,8 @@ def train_gnet_ema(device):
         scheduler.step()
         current_lr = optimizer.param_groups[0]['lr']
         print(f"[Train] [Epoch = {epoch:03d}]  Train Loss: {avg_train:.6f} (MAE: {avg_train_mae:.6f}) |  Test Loss: "
-              f"{avg_test:.6f} (MAE: {avg_test_mae:.6f}) | Lr = {current_lr} | ")
+              f"{avg_test:.6f} (MAE: {avg_test_mae:.6f}) | Lr = {current_lr:.6f} | Velocity loss = "
+              f"{avg_train_vel_loss:.6f} | Stress loss = {avg_train_stress_loss:.6f}")
 
     print(f"\nSaving model to {CHECKPOINT_PATH}")
     torch.save(model.state_dict(), CHECKPOINT_PATH)

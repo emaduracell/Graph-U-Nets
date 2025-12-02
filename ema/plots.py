@@ -17,6 +17,14 @@ def make_final_plots(save_dir, train_losses, val_losses, metric_name, train_metr
     """
     Generates and saves the requested plots.
 
+    :param test_vel_losses:
+
+    :param train_stress_losses:
+
+    :param train_vel_losses:
+
+    :param test_stress_losses:
+
     :param save_dir: str
         Directory to save plots.
     :param train_losses: List
