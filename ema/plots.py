@@ -45,6 +45,7 @@ def make_final_plots(save_dir, train_losses, val_losses, metric_name, train_metr
         
     plt.xlabel('Epoch')
     plt.ylabel('Value')
+    plt.ylim(top=0.5, bottom=0)
     plt.title('Training/Validation Loss and Metric vs Epoch')
     plt.legend()
     plt.grid(True)
@@ -56,6 +57,7 @@ def make_final_plots(save_dir, train_losses, val_losses, metric_name, train_metr
     plt.plot(epochs, grad_norms, label='Gradient Norm')
     plt.xlabel('Epoch')
     plt.ylabel('Gradient Norm')
+    plt.ylim(top=1, bottom=0)
     plt.title('Average Gradient Norm per Epoch')
     plt.legend()
     plt.grid(True)

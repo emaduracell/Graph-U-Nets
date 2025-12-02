@@ -32,7 +32,8 @@ class EmaUnetDataset(Dataset):
                     "std": std,
                     "cells": cells,
                     "node_type": node_type,
-                    "traj_id": traj_id
+                    "traj_id": traj_id,
+                    "time_idx": t,
                 })
 
     def __len__(self):
@@ -41,14 +42,15 @@ class EmaUnetDataset(Dataset):
     def __getitem__(self, idx):
         s = self.samples[idx]
         return (
-            s["A"],         # [N,N]
-            s["X_t"],       # [N,F]
-            s["X_tp1"],     # [N,F]
-            s["mean"],      # [1,1,F]
-            s["std"],       # [1,1,F]
-            s["cells"],     # [C,4]
-            s["node_type"], # [N]
-            s["traj_id"]
+            s["A"],
+            s["X_t"],
+            s["X_tp1"],
+            s["mean"],
+            s["std"],
+            s["cells"],
+            s["node_type"],
+            s["traj_id"],
+            s["time_idx"]
         )
 
 def collate_ema_unet(batch):
@@ -68,8 +70,9 @@ def collate_ema_unet(batch):
     cells_list = []
     node_types_list = []
     traj_id_list = []
+    time_idx_list = []
 
-    for A, X_t, X_tp1, mean, std, cells, node_type, traj_id in batch:
+    for A, X_t, X_tp1, mean, std, cells, node_type, traj_id, time_idx in batch:
         adjacency_mat_list.append(A)
         X_t_list.append(X_t)
         X_tp1_list.append(X_tp1)
@@ -78,5 +81,7 @@ def collate_ema_unet(batch):
         cells_list.append(cells)
         node_types_list.append(node_type)
         traj_id_list.append(traj_id)
+        time_idx_list.append(time_idx)
 
-    return adjacency_mat_list, X_t_list, X_tp1_list, mean_list, std_list, cells_list, node_types_list, traj_id_list
+    return (adjacency_mat_list, X_t_list, X_tp1_list, mean_list, std_list, cells_list, node_types_list, traj_id_list,
+            time_idx_list)

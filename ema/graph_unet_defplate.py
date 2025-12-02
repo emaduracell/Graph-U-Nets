@@ -109,7 +109,7 @@ class GNet_EMA(nn.Module):
         """
         # Prediction
         preds_list = self.embed(batch_adj_A, batch_feat_X)
-        if feat_tp1_mat_list is None: # TODO ?????
+        if feat_tp1_mat_list is None:
             # Then we're doing only inference so we don't need to update the loss
             return preds_list
         assert node_types is not None, "node_types must be provided when computing loss."
@@ -132,8 +132,10 @@ class GNet_EMA(nn.Module):
             loss_graph = 0.0
             if vel_mask.any():
                 loss_graph = loss_graph + F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])
+                # print(f"\t \t Velocity loss = {F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])}")
             if stress_mask.any():
                 loss_graph = loss_graph + F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])
+                # print(f"\t \t Stress loss = {F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])}")
             # Total loss
             total_loss = total_loss + loss_graph
 

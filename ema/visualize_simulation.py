@@ -13,11 +13,15 @@ META_PATH = "data/meta.json"
 TRAJ_INDEX = 0
 OUTPUT_DIR = "simulation_rollout"
 # Model checkpoint
-CHECKPOINT_PATH = "gnet_ema_multi.pt"
+# CHECKPOINT_PATH = "gnet_ema_multi.pt"
+CHECKPOINT_PATH = "plots_bad_3000epoch/gnet_ema_multi_bad_3000.pt"
+
+# 3000 index trajectory = [0, 0, 0, 0], time = [350, 222, 334, 135]
+# 1000 good index trajectory = [0, 0, 0, 0], time = [393, 162, 48, 174]
 
 # Visualization settings
-T_STEP = 50  # time index t (visualize t -> t+1)
-ROLLOUT = True  # if True, run multi-step rollout
+T_STEP = 135 # time index t (visualize t -> t+1)
+ROLLOUT = False  # if True, run multi-step rollout
 ROLLOUT_STEPS = 400  # maximum number of rollout steps for multi-step visualization
 
 

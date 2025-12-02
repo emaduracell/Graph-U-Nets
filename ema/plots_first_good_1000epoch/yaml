@@ -10,11 +10,11 @@ model:
 
 # Training parameters
 training:
-  lr: 0.008 # default = 1e-4
+  lr: 0.01 # default = 1e-4
   epochs: 1000
   batch_size: 4
   shuffle: False
-  adam_weight_decay: 0
+  adam_weight_decay: 1e-4
   num_train_trajs: 1
   mode: "overfit"
   gamma_lr_scheduler: 0.9995 # lr_final = lr0 * gamma^epochs

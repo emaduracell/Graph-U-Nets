@@ -83,9 +83,9 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
     
     model.eval()
     with torch.no_grad():
-        for i, (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids) \
+        for i, (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids) \
                 in enumerate(test_loader):
-            print(f"index trajectory = {traj_ids}, time = {feat_t_mat_list}")
+            print(f"index trajectory = {traj_ids}, time = {time_ids}")
             gs = [A.to(device) for A in adj_mat_list]
             hs = [X_t.to(device) for X_t in feat_t_mat_list]
             targets = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
@@ -191,19 +191,17 @@ def train_gnet_ema(device):
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=shuffle,
                               collate_fn=collate_ema_unet)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, collate_fn=collate_ema_unet)
+    # train_loader = DataLoader(..., drop_last=True)
+    # test_loader = DataLoader(..., drop_last=False)
+
     if mode == "overfit":
         overfit_batch = next(iter(train_loader))
         train_loader = [overfit_batch]
-        print(f"overfit_batch: \n \t type(overfit_batch) = {type(overfit_batch)} \n \t "
-              f"len(overfit_batch)={len(overfit_batch)}"
-              f"type(overfit_batch[0])={type(overfit_batch[0])}"
-              f"\n \t len(overfit_batch[0])={len(overfit_batch[0])} \n \t "
-              f"\n \t len(overfit_batch[0][0])={type(overfit_batch[0][0])} \n \t "
-              f"\n \t len(overfit_batch[0][0])={len(overfit_batch[0][0])} \n \t "
-              f"\n \t len(overfit_batch[0][0][0])={type(overfit_batch[0][0][0])} \n \t "
-              f"\n \t len(overfit_batch[0][0][0])={len(overfit_batch[0][0][0])} \n \t "
-              f"\n \t len(overfit_batch[0][0][0][0])={type(overfit_batch[0][0][0][0])} \n \t "
-              f"\n \t len(overfit_batch[0][0][0][0])={(overfit_batch[0][0][0][0].shape)} \n \t ")
+        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list,
+        means, stds, cells, node_types, traj_ids, time_indices) = overfit_batch
+        print("Overfitting on the following (traj_id, time_idx) pairs:")
+        for i, (tr, ti) in enumerate(zip(traj_ids, time_indices)):
+            print(f"  sample {i:02d}: traj_id={int(tr)}, t={int(ti)}")
         test_loader = [overfit_batch]
 
     # Build model
@@ -243,7 +241,7 @@ def train_gnet_ema(device):
         epoch_grad_norm = 0.0
         num_batches = 0
 
-        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids in train_loader:
+        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids in train_loader:
             adj_mat_list = [A.to(device) for A in adj_mat_list]
             feat_t_mat_list = [X_t.to(device) for X_t in feat_t_mat_list]
             feat_tp1_mat_list = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
@@ -283,7 +281,7 @@ def train_gnet_ema(device):
         total_test_count = 0
         
         with torch.no_grad():
-            for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids \
+            for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids \
                     in test_loader:
                 gs = [A.to(device) for A in adj_mat_list]
                 hs = [X_t.to(device) for X_t in feat_t_mat_list]

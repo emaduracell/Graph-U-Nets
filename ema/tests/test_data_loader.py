@@ -91,7 +91,6 @@ if __name__ == "__main__":
             print("  min row sum:", row_sums.min().item())
             print("  max row sum:", row_sums.max().item())
             inspect_traj_adjacency(traj, idx)
-            raise ValueError
 
     # Run dataset-wide sanity checks
     # dataset_sanity_checks(list_of_trajs)
