@@ -247,6 +247,10 @@ def train_gnet_ema(device):
     num_train_trajs = train_cfg['num_train_trajs']
     batch_size = train_cfg['batch_size']
     shuffle = train_cfg['shuffle']
+    # Set random seed for reproducibility
+    random_seed = train_cfg.get('random_seed', 42)
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
     # load model configs from yaml
     model_hyperparams = lambda: None
     model_hyperparams.activation_gnn = model_cfg['activation_gnn']
@@ -297,14 +301,36 @@ def train_gnet_ema(device):
     # test_loader = DataLoader(..., drop_last=False)
 
     if mode == "overfit":
+        # Get overfit configuration
+        overfit_traj_id = train_cfg.get('overfit_traj_id', None)
+        overfit_time_idx = train_cfg.get('overfit_time_idx', None)
+        
+        # Filter dataset to match overfit criteria
+        overfit_indices = []
+        for idx in range(len(dataset)):
+            sample = dataset.samples[idx]
+            # Match trajectory
+            if overfit_traj_id is not None and sample['traj_id'] != overfit_traj_id:
+                continue
+            # Match time step
+            if overfit_time_idx is not None and sample['time_idx'] != overfit_time_idx:
+                continue
+            overfit_indices.append(idx)
+        
+        if len(overfit_indices) == 0:
+            raise ValueError(f"No samples found matching overfit criteria: traj_id={overfit_traj_id}, time_idx={overfit_time_idx}")
+        
+        # Create overfit subset
+        overfit_set = Subset(dataset, overfit_indices)
+        train_loader = DataLoader(overfit_set, batch_size=len(overfit_indices), shuffle=False, collate_fn=collate_unet)
+        test_loader = train_loader
+        
+        print(f"\nOverfitting on trajectory {overfit_traj_id} with {len(overfit_indices)} time steps")
         overfit_batch = next(iter(train_loader))
-        train_loader = [overfit_batch]
-        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_indices) \
-            = overfit_batch
+        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_indices) = overfit_batch
         print("Overfitting on the following (traj_id, time_idx) pairs:")
         for i, (tr, ti) in enumerate(zip(traj_ids, time_indices)):
             print(f"  sample {i:02d}: traj_id={int(tr)}, t={int(ti)}")
-        test_loader = [overfit_batch]
 
     # Build model
     dim_in = list_of_trajs[0]["X_seq_norm"].shape[2]

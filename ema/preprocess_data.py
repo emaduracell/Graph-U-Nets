@@ -39,6 +39,8 @@ def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs=None):
     print(f"  Output directory: {output_dir}\n")
     
     # Load and preprocess all trajectories
+    # Note: Trajectories are loaded in deterministic sequential order from TFRecord
+    # and will be saved maintaining this order (traj_id 0, 1, 2, ...)
     list_of_trajs = load_all_trajectories(tfrecord_path, meta_path, max_trajs=max_trajs)
     
     # Create output directory if it doesn't exist
@@ -74,6 +76,7 @@ def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs=None):
         print(f"  Nodes per trajectory: {metadata['num_nodes']}")
         print(f"  Feature dimension: {metadata['feature_dim']}")
         print(f"  Total training pairs: {metadata['num_trajectories'] * (metadata['time_steps'] - 1)}")
+        print(f"  Note: Trajectories are saved in sequential order (0, 1, 2, ...)")
         print("="*60 + "\n")
     
     return output_path

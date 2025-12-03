@@ -18,4 +18,7 @@ training:
   num_train_trajs: 1
   mode: "overfit" # None or "overfit"
   gamma_lr_scheduler: 0.9993 # lr_final = lr0 * gamma^epochs 0.9995 good value
+  random_seed: 42 # Seed for train/test split and any random operations
+  overfit_traj_id: null # For overfit mode: which trajectory to use (null = use first available)
+  overfit_time_idx: null # For overfit mode: which time step t to use (null = use all time steps from trajectory)
 
