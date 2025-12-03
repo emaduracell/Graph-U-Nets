@@ -6,7 +6,6 @@ import yaml
 import os
 import numpy as np
 import sys
-from data_loader import load_all_trajectories
 from datasetclass import EmaUnetDataset, collate_unet
 from graph_unet_defplate import Graph_Unet_DefPlate
 from plots import make_final_plots
@@ -80,8 +79,7 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
     return loss_batch_avgd, vel_loss_batch_avgd, stress_loss_batch_avgd
 
 # HARDCODED DATASET AND OUTPUT PATHS
-TFRECORD_PATH = "data/train.tfrecord"
-META_PATH = "data/meta.json"
+PREPROCESSED_DATA_PATH = "data/preprocessed_train.pt"
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 PLOTS_DIR = os.path.join(os.path.dirname(__file__), "plots")
 
@@ -260,13 +258,24 @@ def train_gnet_ema(device):
     model_hyperparams.dropout_mlps_final = model_cfg['dropout_mlps_final']
 
     print("\n=================================================")
-    print(" LOADING TRAJECTORIES")
+    print(" LOADING PREPROCESSED DATA")
     print("=================================================\n")
-    print(f"\t TFRecord: {TFRECORD_PATH}")
-    print(f"\t Meta: {META_PATH}")
-    print(f"\t Max trajectories: {num_train_trajs if num_train_trajs else 'All'}")
-    # load trajectories (only first K if specified)
-    list_of_trajs = load_all_trajectories(TFRECORD_PATH, META_PATH, max_trajs=num_train_trajs)
+    print(f"\t Preprocessed data: {PREPROCESSED_DATA_PATH}")
+    
+    # Load preprocessed trajectories
+    if not os.path.exists(PREPROCESSED_DATA_PATH):
+        raise FileNotFoundError(
+            f"Preprocessed data not found at {PREPROCESSED_DATA_PATH}\n"
+            f"Please run 'python preprocess_data.py' first to generate the preprocessed data."
+        )
+    
+    list_of_trajs = torch.load(PREPROCESSED_DATA_PATH)
+    print(f"\t Loaded {len(list_of_trajs)} preprocessed trajectories")
+    
+    # Limit to num_train_trajs if specified
+    if num_train_trajs is not None and num_train_trajs < len(list_of_trajs):
+        list_of_trajs = list_of_trajs[:num_train_trajs]
+        print(f"\t Using first {num_train_trajs} trajectories")
 
     # Build dataset from these trajectories
     dataset = EmaUnetDataset(list_of_trajs)
