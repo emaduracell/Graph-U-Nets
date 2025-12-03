@@ -1,7 +1,7 @@
 # Model hyperparameters
 model:
-  activation_gnn: "ELU"
-  activation_mlps_final: "ELU"
+  activation_gnn: "ReLU"
+  activation_mlps_final: "ReLU"
   hid_gnn_layer_dim: 128
   hid_mlp_dim: 256
   k_pool_ratios: [0.9, 0.8, 0.7]
@@ -10,12 +10,12 @@ model:
 
 # Training parameters
 training:
-  lr: 0.001 # default = 1e-4
+  lr: 0.0001 # default = 1e-4 good value 0.001
   epochs: 1000
   batch_size: 4
   shuffle: True # False for overfitting?
-  adam_weight_decay: 0.0001 # default: 1e-4 | overfit = 0
+  adam_weight_decay: 0 # default: 1e-4 | overfit = 0
   num_train_trajs: 1
   mode: "overfit" # None or "overfit"
-  gamma_lr_scheduler: 0.9995 # lr_final = lr0 * gamma^epochs
+  gamma_lr_scheduler: 0.9993 # lr_final = lr0 * gamma^epochs 0.9995 good value
 

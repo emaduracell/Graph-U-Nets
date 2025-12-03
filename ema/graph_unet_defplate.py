@@ -12,8 +12,10 @@ class Graph_Unet_DefPlate(nn.Module):
     self.act_mlps_final: activation function for the final MLPs for the prediction of stress and velocity
     self.start_gcn: initial gcn, which has a dimensionality reduction technique
     self.g_unet: graph unet
-    self.stress_mlp: final MLP for the prediction of stress
-    self.velocity_mlp: final MLP for the prediction of velocity
+    self.stress_mlp: final MLP for the prediction of stress. Note: it doesn't end with an activation function
+                    to avoid enforcing a range
+    self.velocity_mlp: final MLP for the prediction of velocity. Note: it doesn't end with an activation function
+                    to avoid enforcing a range
     """
 
     def __init__(self, in_dim, vel_out_dim, stress_out_dim, model_config_hyperparams):

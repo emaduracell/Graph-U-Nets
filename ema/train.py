@@ -429,8 +429,8 @@ def train_gnet_ema(device):
         scheduler.step()
         current_lr = optimizer.param_groups[0]['lr']
         print(f"[Train] [Epoch = {epoch:03d}]  Train Loss: {avg_train:.6f} (MAE: {avg_train_mae:.6f}) |  Test Loss: "
-              f"{avg_test:.6f} (MAE: {avg_test_mae:.6f}) | Lr = {current_lr:.6f} | Velocity loss = "
-              f"{avg_train_vel_loss:.6f} | Stress loss = {avg_train_stress_loss:.6f}")
+              f"{avg_test:.6f} (MAE: {avg_test_mae:.6f}) | Velocity loss = "
+              f"{avg_train_vel_loss:.6f} | Stress loss = {avg_train_stress_loss:.6f} | Lr = {current_lr:.6f} ")
 
     print(f"\nSaving model to {CHECKPOINT_PATH}")
     torch.save(model.state_dict(), CHECKPOINT_PATH)
