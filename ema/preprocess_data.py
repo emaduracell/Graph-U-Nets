@@ -1,15 +1,3 @@
-"""
-Preprocessing script that loads TFRecord data, processes it, and saves it in PyTorch format.
-This decouples data preprocessing from training, allowing faster training iterations.
-
-Usage:
-    python preprocess_data.py
-
-Output:
-    - data/preprocessed_train.pt: Preprocessed training trajectories
-    - data/preprocessed_metadata.pt: Dataset metadata (shapes, counts, etc.)
-"""
-
 import torch
 import os
 from data_loader import load_all_trajectories
@@ -18,7 +6,7 @@ from data_loader import load_all_trajectories
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
 OUTPUT_DIR = "data"
-MAX_TRAJS = None  # Set to None to load all trajectories, or specify a number (e.g., 1500)
+MAX_TRAJS = None  # Set to None to load all trajectories, or specify a number
 
 
 def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs=None):

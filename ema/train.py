@@ -316,7 +316,7 @@ def train_gnet_ema(device):
 
     # Training loop
     print("\n=================================================")
-    print(" TRAINING")
+    print(" \t \t TRAINING")
     print("=================================================\n")
     print(f"\t Epochs: {train_cfg['epochs']}")
     print(f"\t Batch size: {train_cfg['batch_size']}")
