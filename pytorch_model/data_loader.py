@@ -130,7 +130,7 @@ def build_edges_from_cells(mesh_cells):
     """
     Receives the set of all mesh cell, each mesh cell is made by 4 points
     0. Declares an empty set to not count edge duplicates
-    1. for all cells: 1.1 convert to standard python list with ints and unpack them in 4 variables 1.2
+    1. for all cells: convert to standard python list with ints and unpack them in 4 variables
     2. It sorts edge list and then converts to a torch tensor
 
     :param mesh_cells: (some kind of collection)
@@ -140,12 +140,16 @@ def build_edges_from_cells(mesh_cells):
         torch tensor with shape (#edges, 2) since each edge i-->j is (i, j)
     """
     edge_set = set()
+    edge_indices = [(0, 1), (0, 2), (0, 3),
+                    (1, 2), (1, 3),
+                    (2, 3)]
     for c in mesh_cells:
         # unpack and repack
         i0, i1, i2, i3 = map(int, c.tolist())
-        quad = [i0, i1, i2, i3]
+        verts = [i0, i1, i2, i3]
         # for all
-        for u, v in zip(quad, quad[1:] + quad[:1]):
+        for a, b in edge_indices:
+            u, v = verts[a], verts[b]
             if u != v:
                 edge_set.add((u, v))
                 edge_set.add((v, u))

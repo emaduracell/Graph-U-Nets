@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from data_loader import load_all_trajectories
-from graph_unet_defplate import Graph_Unet_DefPlate
+from model_entire import GraphUNet_DefPlate
 
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
@@ -164,7 +164,7 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
 
     Parameters
     ----------
-    model : Graph_Unet_DefPlate
+    model : GraphUNet_DefPlate
     A : Tensor [N,N]
         Adjacency matrix.
     X_seq_norm : Tensor [T,N,F]
@@ -348,7 +348,7 @@ def main():
 
     dim_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
-    model = Graph_Unet_DefPlate(dim_in, 3, 1, myargs).to(device)
+    model = GraphUNet_DefPlate(dim_in, 3, 1, myargs).to(device)
     state = torch.load(CHECKPOINT_PATH, map_location=device)
 
     # Backwards compatibility: old checkpoints used "s_gcn" instead of "start_gcn"

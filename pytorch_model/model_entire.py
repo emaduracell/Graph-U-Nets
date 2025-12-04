@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from graph_unet_layers import GCN, GraphUnet, Initializer, norm_g
 
 
-class Graph_Unet_DefPlate(nn.Module):
+class GraphUNet_DefPlate(nn.Module):
     """
     Graph U-Net model for one-step graph-to-graph prediction: (A, X_t) -> (velocity_vec_{t+1}, stress_{t+1})
 

@@ -1,0 +1,5 @@
+conda install pytorch
+conda install numpy
+conda install pyg -c pyg
+conda install matplotlib
+conda install pyyaml

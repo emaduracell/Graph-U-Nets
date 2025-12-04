@@ -6,8 +6,8 @@ import yaml
 import os
 import numpy as np
 import sys
-from datasetclass import DefPlateDataset, collate_unet
-from graph_unet_defplate import Graph_Unet_DefPlate
+from defplate_dataset import DefPlateDataset, collate_unet
+from model_entire import GraphUNet_DefPlate
 from plots import make_final_plots
 from torch.optim.lr_scheduler import ExponentialLR
 
@@ -338,7 +338,7 @@ def train_gnet_ema(device):
     dim_in = list_of_trajs[0]["X_seq_norm"].shape[2]
     dim_out_vel = 3
     dim_out_stress = 1
-    model = Graph_Unet_DefPlate(dim_in, dim_out_vel, dim_out_stress, model_hyperparams).to(device)
+    model = GraphUNet_DefPlate(dim_in, dim_out_vel, dim_out_stress, model_hyperparams).to(device)
     optimizer = optim.Adam(model.parameters(), lr=start_lr, weight_decay=adam_weight_decay)
     scheduler = ExponentialLR(optimizer, gamma=gamma_lr_scheduler)
 
