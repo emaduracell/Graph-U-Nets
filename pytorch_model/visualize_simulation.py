@@ -22,6 +22,7 @@ STRESS_INDEXES = slice(8, 9)  # like 8:9
 T_STEP = 83 # time index t (visualize t -> t+1)
 ROLLOUT = True  # if True, run multi-step rollout
 ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
+RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
 
 def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     """
@@ -214,6 +215,46 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
     fig.update_scenes(aspectmode="data")
     fig.update_layout(height=600, width=1200, title_text="Mesh Comparison")
     fig.show()
+
+
+def apply_render_mode(pos_true, pos_pred, stress_true, stress_pred, node_type_true, node_type_pred, cells):
+    """
+    Optionally drop border and/or sphere nodes before rendering based on RENDER_MODE.
+
+    Returns filtered copies of inputs with remapped cell indices.
+    """
+    mode = RENDER_MODE.lower()
+    if mode == "all":
+        return pos_true, pos_pred, stress_true, stress_pred, node_type_true, node_type_pred, cells
+
+    mask = np.ones(node_type_true.shape[0], dtype=bool)
+    if "no_border" in mode:
+        mask &= (node_type_true != BOUNDARY_NODE)
+    if "no_sphere" in mode:
+        mask &= (node_type_true != SPHERE_NODE)
+
+    if not mask.any():
+        raise ValueError("Render mask removed all nodes. Adjust RENDER_MODE.")
+
+    # Reindex nodes
+    idx_map = -np.ones(mask.shape[0], dtype=int)
+    keep_idx = np.nonzero(mask)[0]
+    idx_map[keep_idx] = np.arange(keep_idx.shape[0])
+
+    # Filter cells to ones fully kept, then remap their indices
+    keep_cells = np.all(mask[cells], axis=1)
+    cells_kept = cells[keep_cells]
+    cells_reindexed = idx_map[cells_kept]
+
+    # Apply mask to per-node arrays
+    pos_true_f = pos_true[mask]
+    pos_pred_f = pos_pred[mask]
+    stress_true_f = stress_true[mask] if stress_true is not None else None
+    stress_pred_f = stress_pred[mask] if stress_pred is not None else None
+    node_type_true_f = node_type_true[mask] if node_type_true is not None else None
+    node_type_pred_f = node_type_pred[mask] if node_type_pred is not None else None
+
+    return pos_true_f, pos_pred_f, stress_true_f, stress_pred_f, node_type_true_f, node_type_pred_f, cells_reindexed
 
 
 # MULTI-STEP ROLLOUT (USING VELOCITY PREDICTIONS)
@@ -464,6 +505,10 @@ def main():
         cells = cells.cpu().numpy()
 
     # ---------------------- SINGLE STEP VISUALIZE ----------------------
+    pos_true, pos_pred, stress_true, stress_pred, node_type_true, node_type_pred, cells_filtered = apply_render_mode(
+        pos_true, pos_pred, stress_true, stress_pred, node_type_true, node_type_pred, cells
+    )
+
     if not ROLLOUT:
         visualize_mesh_pair(
             pos_true=pos_true,
@@ -472,7 +517,7 @@ def main():
             stress_pred=stress_pred,
             node_type_true=node_type_true,
             node_type_pred=node_type_pred,
-            cells=cells,
+            cells=cells_filtered,
             color_mode="stress",  # or "node_type"
             title_true=f"Ground Truth t={t + 1}",
             title_pred=f"Prediction t={t + 1}"
@@ -516,9 +561,13 @@ def main():
         stress_pred = stress_pred_list[k].squeeze(-1)
         node_type_pred = node_type_pred_list[k]
 
+        coords_true, coords_pred, stress_true, stress_pred, node_type_true, node_type_pred, cells_filtered = apply_render_mode(
+            coords_true, coords_pred, stress_true, stress_pred, node_type_true, node_type_pred, cells
+        )
+
         visualize_mesh_pair(pos_true=coords_true, pos_pred=coords_pred, stress_true=stress_true,
                             stress_pred=stress_pred, node_type_true=node_type_true, node_type_pred=node_type_pred,
-                            cells=cells, color_mode="stress", title_true=f"Ground Truth t={t + 1 + k}",
+                            cells=cells_filtered, color_mode="stress", title_true=f"Ground Truth t={t + 1 + k}",
                             title_pred=f"Prediction t={t + 1 + k}")
 
     # ======================================================
