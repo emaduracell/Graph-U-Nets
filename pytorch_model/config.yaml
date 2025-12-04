@@ -11,13 +11,13 @@ model:
 # Training parameters
 training:
   lr: 0.001 # default = 1e-4 good value 0.001
-  epochs: 1000
+  epochs: 600
   batch_size: 4
   shuffle: False # False for overfitting?
   adam_weight_decay: 0 # default: 1e-4 | overfit = 0
-  num_train_trajs: 4 # 3
+  num_train_trajs: 3
   mode: "overfit" # None or "overfit"
-  gamma_lr_scheduler: 1 # lr_final = lr0 * gamma^epochs 0.9995 good value
+  gamma_lr_scheduler: 0.9997 # lr_final = lr0 * gamma^epochs 0.9995 good value
   random_seed: 42 # Seed for train/test split and any random operations
   overfit_traj_id: 2 # For overfit mode: which trajectory to use (null = use first available)
   overfit_time_idx: [374,356,302,387] # For overfit mode: which time step t to use (null = use all time steps from trajectory)

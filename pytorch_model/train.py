@@ -15,6 +15,8 @@ from torch.optim.lr_scheduler import ExponentialLR
 # NORMAL_NODE = torch.Tensor([0., 0.])
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
+VELOCITY_INDEXES = slice(5, 8)     # like 5:8
+STRESS_INDEXES   = slice(8, 9)     # like 8:9
 
 def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
     """
@@ -43,8 +45,8 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
         vel_mask = (nodetype == NORMAL_NODE)
         stress_mask = (nodetype == NORMAL_NODE) | (nodetype == BOUNDARY_NODE)
         # Extract targets
-        target_vel = target[:, 4:7]
-        target_stress = target[:, 7:8]
+        target_vel = target[:, VELOCITY_INDEXES]
+        target_stress = target[:, STRESS_INDEXES]
         # Extract predictions
         pred_vel = pred[:, :3]
         pred_stress = pred[:, 3:4]
@@ -119,8 +121,8 @@ def compute_batch_metrics(preds_list, targets_list, node_types_list):
         vel_mask = (nt == NORMAL_NODE)
         stress_mask = (nt == NORMAL_NODE) | (nt == BOUNDARY_NODE)
         
-        target_vel = target[:, 4:7]
-        target_stress = target[:, 7:8]
+        target_vel = target[:, VELOCITY_INDEXES]
+        target_stress = target[:, STRESS_INDEXES]
         pred_vel = pred[:, :3]
         pred_stress = pred[:, 3:4]
         
@@ -282,6 +284,8 @@ def train_gnet_ema(device):
     if num_train_trajs is not None and num_train_trajs < len(list_of_trajs):
         list_of_trajs = list_of_trajs[:num_train_trajs]
         print(f"\t Using first {num_train_trajs} trajectories")
+
+    # TODO SPECIFY WHICH TIME STEPS AND TRAJECTORIES WE'RE TRAINING ONE AND WHICH ONES ARE IN THE TEST SET INSTEAD
 
     # Build dataset from these trajectories
     dataset = DefPlateDataset(list_of_trajs)
