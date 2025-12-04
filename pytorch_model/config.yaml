@@ -11,7 +11,7 @@ model:
 # Training parameters
 training:
   lr: 0.001 # default = 1e-4 good value 0.001
-  epochs: 600
+  epochs: 100
   batch_size: 4
   shuffle: False # False for overfitting?
   adam_weight_decay: 0 # default: 1e-4 | overfit = 0
