@@ -198,14 +198,14 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
                 # Velocity
                 if vel_mask.any():
                     p_vel = pred[:, :3][vel_mask]
-                    t_vel = target[:, 4:7][vel_mask]
+                    t_vel = target[:, VELOCITY_INDEXES][vel_mask]
                     all_vel_preds.append(p_vel.cpu().numpy())
                     all_vel_targets.append(t_vel.cpu().numpy())
 
                 # Stress
                 if stress_mask.any():
                     p_stress = pred[:, 3:4][stress_mask]
-                    t_stress = target[:, 7:8][stress_mask]
+                    t_stress = target[:, STRESS_INDEXES][stress_mask]
                     all_stress_preds.append(p_stress.cpu().numpy())
                     all_stress_targets.append(t_stress.cpu().numpy())
 
