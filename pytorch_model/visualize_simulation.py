@@ -14,6 +14,8 @@ OUTPUT_DIR = "simulation_rollout"
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
+SPHERE_NODE = 1
+NODE_TYPE_INDEXES = slice(3, 5)
 VELOCITY_INDEXES = slice(5, 8)  # like 5:8
 STRESS_INDEXES = slice(8, 9)  # like 8:9
 # Visualization settings
@@ -250,11 +252,15 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
     mean_vec = mean_vec.to(device)  # [F]
     std_vec = std_vec.to(device)  # [F]
     node_type = node_type.to(device)  # [N]
+    # Node type features must follow data_loader encoding: [sphere, boundary]
+    node_type_onehot = torch.zeros((node_type.shape[0], 2), device=device, dtype=mean_vec.dtype)
+    node_type_onehot[:, 0] = (node_type == SPHERE_NODE).float()
+    node_type_onehot[:, 1] = (node_type == BOUNDARY_NODE).float()
 
     # Masks
-    deform_mask = (node_type == 0)  # deformable plate
-    rigid_mask = (node_type == 1)  # rigid body
-    border_mask = (node_type == 3)  # fixed borders
+    deform_mask = (node_type == NORMAL_NODE)  # deformable plate
+    rigid_mask = (node_type == SPHERE_NODE)  # rigid body
+    border_mask = (node_type == BOUNDARY_NODE)  # fixed borders
 
     # ---------- initial state at t0 ----------
     current_norm = X_seq_norm[t0].to(device)  # [N,F] or [1,N,F]
@@ -281,18 +287,18 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
             pred = model.rollout_step(A, current_norm)  # [N,4] normalized
 
         vel_norm = pred[:, :3]  # [N,3]
-        stress_norm = pred[:, 3]  # [N]
+        stress_norm = pred[:, 3].unsqueeze(-1)  # [N,1]
 
         # Denormalize predicted velocity & stress (v_hat_k, sigma_hat_k)
-        vel_pred = vel_norm * std_vec[4:7] + mean_vec[4:7]  # [N,3]
-        stress_pred = stress_norm * std_vec[7] + mean_vec[7]  # [N]
+        vel_pred = vel_norm * std_vec[VELOCITY_INDEXES] + mean_vec[VELOCITY_INDEXES]  # [N,3]
+        stress_pred = stress_norm * std_vec[STRESS_INDEXES] + mean_vec[STRESS_INDEXES]  # [N,1]
 
         # ======================================================
         # 2) p_hat_{k+1} from p_hat_k + v_hat_k (ONLY deformables)
         # ======================================================
         # Start p_hat_{k+1} as a copy of p_hat_k
         p_hat_next = p_hat.clone()  # [N,3]
-        stress_next = stress_pred.clone()  # [N]
+        stress_next = stress_pred.clone()  # [N,1]
 
         # --- deformable plate nodes (node_type == 0) ---
         # This line enforces the desired recurrence strictly:
@@ -309,8 +315,8 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
 
         gt_phys_step = gt_norm_step * std_vec + mean_vec  # [N,F]
         p_rigid_gt = gt_phys_step[:, :3]  # [N,3]
-        v_rigid_gt = gt_phys_step[:, 4:7]  # [N,3]
-        s_rigid_gt = gt_phys_step[:, 7]  # [N]
+        v_rigid_gt = gt_phys_step[:, VELOCITY_INDEXES]  # [N,3]
+        s_rigid_gt = gt_phys_step[:, STRESS_INDEXES]  # [N,1]
 
         # drive rigid nodes with GT
         p_hat_next[rigid_mask] = p_rigid_gt[rigid_mask]
@@ -339,9 +345,9 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
         # ======================================================
         X_next_phys = torch.zeros_like(current_phys)
         X_next_phys[:, :3] = p_hat_next  # positions
-        X_next_phys[:, 3] = node_type.float()  # node type
-        X_next_phys[:, 4:7] = vel_pred  # velocity field
-        X_next_phys[:, 7] = stress_next  # stress
+        X_next_phys[:, NODE_TYPE_INDEXES] = node_type_onehot  # node type one-hot
+        X_next_phys[:, VELOCITY_INDEXES] = vel_pred  # velocity field
+        X_next_phys[:, STRESS_INDEXES] = stress_next  # stress
 
         # Re-normalize for next model input (graph at time k+1)
         current_phys = X_next_phys
@@ -431,8 +437,8 @@ def main():
     coords_true = X_tp_norm[:, :3] * std_vec[:3] + mean_vec[:3]  # [N,3]
     pos_true = coords_true.cpu().numpy()
 
-    stress_true = X_tp_norm[:, STRESS_INDEXES] * std_vec[STRESS_INDEXES] + mean_vec[STRESS_INDEXES]  # [N] (von Mises stress)
-    stress_true = stress_true.cpu().numpy()
+    stress_true = X_tp_norm[:, STRESS_INDEXES] * std_vec[STRESS_INDEXES] + mean_vec[STRESS_INDEXES]  # [N,1] (von Mises stress)
+    stress_true = stress_true.cpu().numpy().squeeze(-1)
 
     # Use rollout with 1 step to integrate predicted velocities
     coords_pred_list, stress_pred_list, node_type_pred_list,rollout_error_list = rollout(
@@ -447,7 +453,7 @@ def main():
     )
 
     pos_pred = coords_pred_list[0]
-    stress_pred = stress_pred_list[0]
+    stress_pred = stress_pred_list[0].squeeze(-1)
 
     # Node types for visualization: always use ground-truth integers
     node_type_np = node_type.cpu().numpy()
@@ -502,12 +508,12 @@ def main():
 
         # Ground-truth von Mises stress at this step
         stress_true_norm = X_tp_k_norm[:, STRESS_INDEXES]
-        stress_true = (stress_true_norm * std_vec[STRESS_INDEXES] + mean_vec[STRESS_INDEXES]).cpu().numpy()
+        stress_true = (stress_true_norm * std_vec[STRESS_INDEXES] + mean_vec[STRESS_INDEXES]).cpu().numpy().squeeze(-1)
 
         node_type_true = node_type_np
 
         coords_pred = coords_pred_list[k]
-        stress_pred = stress_pred_list[k]
+        stress_pred = stress_pred_list[k].squeeze(-1)
         node_type_pred = node_type_pred_list[k]
 
         visualize_mesh_pair(pos_true=coords_true, pos_pred=coords_pred, stress_true=stress_true,
