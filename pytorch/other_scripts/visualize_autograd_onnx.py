@@ -1,22 +1,3 @@
-"""
-Visualize the autograd computation graph for Graph_Unet_DefPlate model.
-
-This script creates multiple visualizations of the model architecture:
-1. PyTorch autograd graph (forward and backward pass)
-2. ONNX graph export for interactive visualization
-3. Detailed text architecture description
-
-All visualizations are generated without running actual training.
-
-Requirements:
-    pip install -r requirements.txt
-
-Note: You also need to install graphviz system package:
-    - macOS: brew install graphviz
-    - Ubuntu: sudo apt-get install graphviz
-    - Windows: download from https://graphviz.org/download/
-"""
-
 import torch
 import torch.nn as nn
 from torchviz import make_dot

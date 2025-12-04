@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset
 
 
-class EmaUnetDataset(Dataset):
+class DefPlateDataset(Dataset):
 
     def __init__(self, list_of_trajs):
         """

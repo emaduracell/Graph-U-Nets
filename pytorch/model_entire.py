@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from original_paper_models_layers import GCN, GraphUnet, Initializer, norm_g
+from graph_unet_layers import GCN, GraphUnet, Initializer, norm_g
 
 
 class Graph_Unet_DefPlate(nn.Module):

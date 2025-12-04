@@ -114,4 +114,4 @@ checkpoints/
 /paper/data/
 
 .idea
-ema/data
+pytorch/data

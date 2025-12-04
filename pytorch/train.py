@@ -6,7 +6,7 @@ import yaml
 import os
 import numpy as np
 import sys
-from datasetclass import EmaUnetDataset, collate_unet
+from datasetclass import DefPlateDataset, collate_unet
 from graph_unet_defplate import Graph_Unet_DefPlate
 from plots import make_final_plots
 from torch.optim.lr_scheduler import ExponentialLR
@@ -275,14 +275,14 @@ def train_gnet_ema(device):
     
     list_of_trajs = torch.load(PREPROCESSED_DATA_PATH)
     print(f"\t Loaded {len(list_of_trajs)} preprocessed trajectories")
-    
+
     # Limit to num_train_trajs if specified
     if num_train_trajs is not None and num_train_trajs < len(list_of_trajs):
         list_of_trajs = list_of_trajs[:num_train_trajs]
         print(f"\t Using first {num_train_trajs} trajectories")
 
     # Build dataset from these trajectories
-    dataset = EmaUnetDataset(list_of_trajs)
+    dataset = DefPlateDataset(list_of_trajs)
     print(f"Total training pairs (X_t, X_t+1): {len(dataset)}")
     # Random 80/20 split and then load data
     total = len(dataset)
@@ -303,22 +303,24 @@ def train_gnet_ema(device):
     if mode == "overfit":
         # Get overfit configuration
         overfit_traj_id = train_cfg.get('overfit_traj_id', None)
-        overfit_time_idx = train_cfg.get('overfit_time_idx', None)
+        overfit_time_idx_list = train_cfg.get('overfit_time_idx', None)
         
         # Filter dataset to match overfit criteria
         overfit_indices = []
+        print(f"len(dataset)={len(dataset)}")
         for idx in range(len(dataset)):
-            sample = dataset.samples[idx]
-            # Match trajectory
-            if overfit_traj_id is not None and sample['traj_id'] != overfit_traj_id:
-                continue
-            # Match time step
-            if overfit_time_idx is not None and sample['time_idx'] != overfit_time_idx:
-                continue
-            overfit_indices.append(idx)
+            for i in overfit_time_idx_list:
+                sample = dataset.samples[idx]
+                # Match trajectory
+                if overfit_traj_id is not None and sample['traj_id'] != overfit_traj_id:
+                    continue
+                # Match time step
+                if overfit_time_idx_list is not None and sample['time_idx'] != i:
+                    continue
+                overfit_indices.append(idx)
         
         if len(overfit_indices) == 0:
-            raise ValueError(f"No samples found matching overfit criteria: traj_id={overfit_traj_id}, time_idx={overfit_time_idx}")
+            raise ValueError(f"No samples found matching overfit criteria: traj_id={overfit_traj_id}, time_idx={overfit_time_idx_list}")
         
         # Create overfit subset
         overfit_set = Subset(dataset, overfit_indices)
@@ -327,7 +329,7 @@ def train_gnet_ema(device):
         
         print(f"\nOverfitting on trajectory {overfit_traj_id} with {len(overfit_indices)} time steps")
         overfit_batch = next(iter(train_loader))
-        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_indices) = overfit_batch
+        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_indices) = overfit_batch
         print("Overfitting on the following (traj_id, time_idx) pairs:")
         for i, (tr, ti) in enumerate(zip(traj_ids, time_indices)):
             print(f"  sample {i:02d}: traj_id={int(tr)}, t={int(ti)}")
@@ -344,13 +346,13 @@ def train_gnet_ema(device):
     print("\n=================================================")
     print(" \t \t TRAINING")
     print("=================================================\n")
-    print(f"\t Epochs: {train_cfg['epochs']}")
-    print(f"\t Batch size: {train_cfg['batch_size']}")
-    print(f"\t Start learning rate: {start_lr}\n")
-    print(f"\t Mode: {mode}")
-    print(f"\t Weight decay = {adam_weight_decay}")
-    print(f"\t Number of trajectories on which I'm training = {num_train_trajs}")
-    print(f"\t len(train_loader) = {len(train_loader)} \t type(train_loader)={type(train_loader)}")
+    print(f"Epochs: {train_cfg['epochs']}")
+    print(f"Batch size: {train_cfg['batch_size']}")
+    print(f"Start learning rate: {start_lr}\n")
+    print(f"Mode: {mode}")
+    print(f"Weight decay = {adam_weight_decay}")
+    print(f"Number of trajectories on which I'm training = {num_train_trajs}")
+    print(f"len(train_loader) = {len(train_loader)} \t type(train_loader)={type(train_loader)}")
 
     # History tracking
     train_losses = []
@@ -376,19 +378,19 @@ def train_gnet_ema(device):
         epoch_grad_norm = 0.0
         num_batches = 0
 
-        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids\
+        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_ids\
                 in train_loader:
             adj_mat_list = [A.to(device) for A in adj_mat_list]
             feat_t_mat_list = [X_t.to(device) for X_t in feat_t_mat_list]
             feat_tp1_mat_list = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
-            node_types = [nt.to(device) for nt in node_types]
+            node_types_cpu = [nt.to(device) for nt in node_types_cpu]
 
             optimizer.zero_grad()
             # One batch: forward and backprop
             # batch_loss, preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
-            preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+            preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types_cpu)
             batch_loss, vel_loss_batch_avgd, stress_loss_batch_avgd = compute_loss(adj_mat_list, feat_tp1_mat_list,
-                                                                                   node_types, preds_list)
+                                                                                   node_types_cpu, preds_list)
             batch_loss.backward()
             # Compute grad norm
             norm = get_grad_norm(model)
@@ -400,7 +402,7 @@ def train_gnet_ema(device):
             total_train_vel_loss += vel_loss_batch_avgd
             total_train_stress_loss += stress_loss_batch_avgd
             # Compute MAE
-            mae, count = compute_batch_metrics(preds_list, feat_tp1_mat_list, node_types)
+            mae, count = compute_batch_metrics(preds_list, feat_tp1_mat_list, node_types_cpu)
             total_train_mae += mae
             total_train_count += count
             # batches count
@@ -424,20 +426,20 @@ def train_gnet_ema(device):
         with torch.no_grad():
             for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids \
                     in test_loader:
-                gs = [A.to(device) for A in adj_mat_list]
-                hs = [X_t.to(device) for X_t in feat_t_mat_list]
-                targets = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
-                node_types = [nt.to(device) for nt in node_types]
+                adj_mat_cpu_list = [A.to(device) for A in adj_mat_list]
+                feat_mat_cpu_list = [X_t.to(device) for X_t in feat_t_mat_list]
+                feat_mat_cpu_list_tp1 = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
+                node_types_cpu = [nt.to(device) for nt in node_types]
 
-                preds_list = model(gs, hs, targets, node_types)
-                batch_loss, vel_loss_batch_avgd,stress_loss_batch_avgd = compute_loss(gs, targets, node_types,
+                preds_list = model(adj_mat_cpu_list, feat_mat_cpu_list, feat_mat_cpu_list_tp1, node_types_cpu)
+                batch_loss, vel_loss_batch_avgd, stress_loss_batch_avgd = compute_loss(adj_mat_cpu_list, feat_mat_cpu_list_tp1, node_types_cpu,
                                                                                       preds_list)
 
                 total_test_vel_loss += vel_loss_batch_avgd
                 total_test_stress_loss += stress_loss_batch_avgd
                 total_test_loss += batch_loss.item()
                 
-                mae, count = compute_batch_metrics(preds_list, targets, node_types)
+                mae, count = compute_batch_metrics(preds_list, feat_mat_cpu_list_tp1, node_types_cpu)
                 total_test_mae += mae
                 total_test_count += count
 

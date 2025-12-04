@@ -15,10 +15,10 @@ training:
   batch_size: 4
   shuffle: False # False for overfitting?
   adam_weight_decay: 0 # default: 1e-4 | overfit = 0
-  num_train_trajs: 1
-  mode: "overfit" # None or "overfit"
-  gamma_lr_scheduler: 0.9993 # lr_final = lr0 * gamma^epochs 0.9995 good value
+  num_train_trajs: 3
+  mode: None # None or "overfit"
+  gamma_lr_scheduler: 1 # lr_final = lr0 * gamma^epochs 0.9995 good value
   random_seed: 42 # Seed for train/test split and any random operations
-  overfit_traj_id: null # For overfit mode: which trajectory to use (null = use first available)
-  overfit_time_idx: null # For overfit mode: which time step t to use (null = use all time steps from trajectory)
+  overfit_traj_id: 1 # For overfit mode: which trajectory to use (null = use first available)
+  overfit_time_idx: [394,300,396,254] # For overfit mode: which time step t to use (null = use all time steps from trajectory)
 
