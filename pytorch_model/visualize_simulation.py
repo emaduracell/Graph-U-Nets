@@ -8,9 +8,11 @@ from plotly.subplots import make_subplots
 from data_loader import load_all_trajectories
 from model_entire import GraphUNet_DefPlate
 
-# Global variable
+# Data paths
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
+# Prefer the preprocessed dataset to mirror training
+PREPROCESSED_PATH = "data/preprocessed_train.pt"
 OUTPUT_DIR = "simulation_rollout"
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 BOUNDARY_NODE = 3
@@ -408,12 +410,17 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
 def main():
     # ---------------------- LOAD DATA ----------------------
     print("Loading trajectory...")
-    # Use the same loader used for training
-    list_of_trajs = load_all_trajectories(
-        TFRECORD_PATH,
-        META_PATH,
-        max_trajs=TRAJ_INDEX + 1
-    )
+    # Prefer preprocessed data (same as training); fall back to raw TFRecord if missing
+    if os.path.exists(PREPROCESSED_PATH):
+        list_of_trajs = torch.load(PREPROCESSED_PATH)
+        if TRAJ_INDEX >= len(list_of_trajs):
+            raise ValueError(f"Requested TRAJ_INDEX={TRAJ_INDEX} but only {len(list_of_trajs)} trajectories in "
+                             f"{PREPROCESSED_PATH}")
+        # Keep only what we need to avoid extra host->device transfers
+        list_of_trajs = list_of_trajs[:TRAJ_INDEX + 1]
+        print(f"Loaded {len(list_of_trajs)} preprocessed trajectories from {PREPROCESSED_PATH}")
+    else:
+        raise ValueError(f"Preprocessed data not found at {PREPROCESSED_PATH}")
     traj = list_of_trajs[TRAJ_INDEX]
 
     A = traj["A"]  # [N,N]
