@@ -11,6 +11,8 @@ from model_entire import GraphUNet_DefPlate
 from plots import make_final_plots
 from torch.optim.lr_scheduler import ExponentialLR
 
+# BOUNDARY_NODE = torch.Tensor([0., 1.])
+# NORMAL_NODE = torch.Tensor([0., 0.])
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
 
@@ -38,7 +40,7 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
     for pred, target, nodetype in zip(preds_list, feat_tp1_mat_list, node_types_list):
         # Create masks for filtering: FOR VEL mask OUT both the sphere and the boundary constraints
         # FOR STRESS mask OUT only the sphere (calculate stress on BC)
-        vel_mask = (nodetype == NORMAL_NODE)  #
+        vel_mask = (nodetype == NORMAL_NODE)
         stress_mask = (nodetype == NORMAL_NODE) | (nodetype == BOUNDARY_NODE)
         # Extract targets
         target_vel = target[:, 4:7]
@@ -185,9 +187,9 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
                 handle.remove()
 
             # Collect per graph
-            for pred, target, nt in zip(preds_list, targets, node_types):
-                vel_mask = (nt == 0)
-                stress_mask = (nt == 0) | (nt == 6)
+            for pred, target, nodetype in zip(preds_list, targets, node_types):
+                vel_mask = (nodetype == NORMAL_NODE)
+                stress_mask = (nodetype == NORMAL_NODE) | (nodetype == BOUNDARY_NODE)
                 
                 # Velocity
                 if vel_mask.any():
@@ -293,7 +295,7 @@ def train_gnet_ema(device):
     train_set = Subset(dataset, train_idx)
     test_set = Subset(dataset, test_idx)
     # Create a data loader that respects batch size. One batch := a set of graphs, each corresponding to a couple
-    # (traj_id, time_id), such that #graphs = batch_size
+    # (traj_id, time_id), such that number_of_graphs = batch_size
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=shuffle,
                               collate_fn=collate_unet)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, collate_fn=collate_unet)
@@ -320,7 +322,8 @@ def train_gnet_ema(device):
                 overfit_indices.append(idx)
         
         if len(overfit_indices) == 0:
-            raise ValueError(f"No samples found matching overfit criteria: traj_id={overfit_traj_id}, time_idx={overfit_time_idx_list}")
+            raise ValueError(f"No samples found matching overfit criteria: traj_id={overfit_traj_id}, "
+                             f"time_idx={overfit_time_idx_list}")
         
         # Create overfit subset
         overfit_set = Subset(dataset, overfit_indices)
@@ -329,7 +332,8 @@ def train_gnet_ema(device):
         
         print(f"\nOverfitting on trajectory {overfit_traj_id} with {len(overfit_indices)} time steps")
         overfit_batch = next(iter(train_loader))
-        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_indices) = overfit_batch
+        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_indices) \
+            = overfit_batch
         print("Overfitting on the following (traj_id, time_idx) pairs:")
         for i, (tr, ti) in enumerate(zip(traj_ids, time_indices)):
             print(f"  sample {i:02d}: traj_id={int(tr)}, t={int(ti)}")
@@ -432,8 +436,8 @@ def train_gnet_ema(device):
                 node_types_cpu = [nt.to(device) for nt in node_types]
 
                 preds_list = model(adj_mat_cpu_list, feat_mat_cpu_list, feat_mat_cpu_list_tp1, node_types_cpu)
-                batch_loss, vel_loss_batch_avgd, stress_loss_batch_avgd = compute_loss(adj_mat_cpu_list, feat_mat_cpu_list_tp1, node_types_cpu,
-                                                                                      preds_list)
+                batch_loss, vel_loss_batch_avgd, stress_loss_batch_avgd = \
+                    compute_loss(adj_mat_cpu_list, feat_mat_cpu_list_tp1, node_types_cpu, preds_list)
 
                 total_test_vel_loss += vel_loss_batch_avgd
                 total_test_stress_loss += stress_loss_batch_avgd

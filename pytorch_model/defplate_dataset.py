@@ -66,6 +66,7 @@ def collate_unet(batch):
 
     :param batch: List
         a list of tuples (A, X_t, X_tp1, mean, std, cells, node_type, traj_id)
+
     :return (A_list, X_t_list, X_tp1_list, mean_list, std_list, cells_list, node_type_list, traj_id_list).
     """
 

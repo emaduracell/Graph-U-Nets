@@ -24,7 +24,7 @@ class DefPlateGraphUnet(nn.Module):
 
         # Initial GCN
         # self.start_gcn = GCN(in_dim, hid_gnn_layer_dim, self.act_gnn, dropout_gnn)
-        # Graph U-Net
+        # Graph U-Net: TODO NOTE IT DOESN'T HAVE DROPOUT
         self.gunet = GraphUNet(
             in_channels=in_channels,
             hidden_channels=hidden_channels,

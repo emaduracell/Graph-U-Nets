@@ -3,6 +3,9 @@ import torch
 import numpy as np
 from tfrecord.reader import tfrecord_loader
 
+NORMAL_NODE = [0, 0]  # value 0 (NORMAL)
+SPHERE_NODE = [1, 0]  # value 1 (SPHERE)
+BOUNDARY_NODE = [0, 1]  # value 3 (BOUNDARY)
 
 def _cast_to_bytes(value):
     """
@@ -90,12 +93,12 @@ def cast_raw_array(value, dtype, shape_spec):
 
 def cast_trajectory_from_record(record, meta):
     """
-    Casts the TFRecord into numpy arrays. TODO FLOAT 32???
+    Casts the TFRecord into numpy arrays.
     The feature meta["features"] is a dict that contains info about the features and their shape.
 
-    :param record: TODO ??
+    :param record:
         A TFRecord object
-    :param meta: TODO ??
+    :param meta:
         json file
 
     :return trajectory_dict: Dict
@@ -227,9 +230,27 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         for t in range(1, time_step_dim):
             vel[t] = world_pos[t] - world_pos[t - 1]
 
+        lookup = np.array([
+            NORMAL_NODE,  # value 0 (NORMAL)
+            SPHERE_NODE,  # value 1 (SPHERE)
+            [0, 0],  # value 2 (not used)
+            BOUNDARY_NODE,  # value 3 (BOUNDARY)
+        ])
+        # Keep a copy of the raw scalar node types for plotting later
+        node_type_raw = node_type.copy()  # shape (N, 1)
+        node_type_idx = node_type_raw.squeeze(-1)  # (N,)
+        node_type_onehot = lookup[node_type_idx]  # (N, 2)
+
+        if idx == 1 or idx == 2:
+            print(
+                f"node_type: \n \t type(node_type) = {type(node_type)} \n \t type(node_type[0])={type(node_type[0])}, "
+                f"\n \t type(node_type[0][0])={type(node_type[0][0])}) \n \t len(node_type)={len(node_type)} "
+                f"\n \t len(node_type[0])={len(node_type[0])}")
+
         # Build feature sequence Feature layout: [pos_x, pos_y, pos_z, node_type, vel_x, vel_y, vel_z, stress]
         feats_list = []
-        node_type_floatcast = node_type.astype(np.float32)
+        node_type_floatcast = node_type_onehot.astype(np.float32)
+
         for t in range(time_step_dim):
             feats_t = np.concatenate([world_pos[t], node_type_floatcast, vel[t], stress[t]], axis=-1)
             feats_list.append(feats_t)
@@ -260,7 +281,7 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
             raise RuntimeError("Adjacency normalization failed immediately after construction.")
         # ensure cells and node_type are tensors, passing them to plot border and sphere separately (not predicted)
         cells_tensor = torch.tensor(mesh_cells, dtype=torch.long)
-        node_type_tensor = torch.tensor(node_type.squeeze(-1), dtype=torch.long)
+        node_type_tensor = torch.tensor(node_type_raw.squeeze(-1), dtype=torch.long)
         list_of_trajs.append({
             "A": A,
             "X_seq_norm": X_seq,
@@ -279,9 +300,10 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
 
     std_dev = torch.sqrt(std_acc / (element_num - 1))
 
-    NODE_TYPE_IDX = 3
-    mean[NODE_TYPE_IDX] = 0.0
-    std_dev[NODE_TYPE_IDX] = 1.0
+    NODE_TYPE_START = 3
+    NODE_TYPE_END = 5
+    mean[NODE_TYPE_START:NODE_TYPE_END] = 0.0
+    std_dev[NODE_TYPE_START:NODE_TYPE_END] = 1.0
 
     mean_b = mean.view(1, 1, -1)
     std_b = std_dev.view(1, 1, -1)
@@ -295,6 +317,7 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
     print(f"\nLoaded {len(list_of_trajs)} trajectories. "
           f"")
     return list_of_trajs
+
 
 if __name__ == "__main__":
     TFRECORD_PATH = "data/train.tfrecord"
