@@ -6,10 +6,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from data_loader import load_all_trajectories
-from model_entire import GraphUNet_DefPlate
-
-TFRECORD_PATH = "data/train.tfrecord"
-META_PATH = "data/meta.json"
+from graph_unet_defplate import Graph_Unet_DefPlate
+TFRECORD_PATH = "deforming_plate/train.tfrecord"
+META_PATH = "deforming_plate/meta.json"
 TRAJ_INDEX = 0
 OUTPUT_DIR = "simulation_rollout"
 # Model checkpoint
@@ -22,9 +21,42 @@ CHECKPOINT_PATH = "gnet_ema_multi.pt"
 
 # Visualization settings
 T_STEP = 83 # time index t (visualize t -> t+1)
-ROLLOUT = False  # if True, run multi-step rollout
-ROLLOUT_STEPS = 400  # maximum number of rollout steps for multi-step visualization
+ROLLOUT = True  # if True, run multi-step rollout
+ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
+def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
+    """
+    Creates a Scatter3d trace that draws the edges of the triangles.
+    """
+    # 1. Create a list of lines: (i->j), (j->k), (k->i)
+    # To do this efficiently in Plotly without loops, we stack coordinates
+    # in the order: point_i, point_j, point_k, point_i, None
+    # 'None' breaks the line so we don't connect separate triangles.
+    
+    tri_points = np.vstack([
+        i, j, k, i, 
+        np.full_like(i, -1) # Placeholder for None
+    ]).T.flatten()
+    
+    # Map indices to coordinates
+    # We replace the -1 indices with NaN or None effectively by masking later
+    xe = x[tri_points]
+    ye = y[tri_points]
+    ze = z[tri_points]
+    
+    # Insert None where we had the -1 index to break the lines
+    # (The standard Plotly trick for disconnected lines)
+    xe[4::5] = None
+    ye[4::5] = None
+    ze[4::5] = None
 
+    return go.Scatter3d(
+        x=xe, y=ye, z=ze,
+        mode='lines',
+        line=dict(color=color, width=width),
+        name='wireframe',
+        showlegend=False,
+        hoverinfo='skip' # Don't show tooltips for the grid lines
+    )
 
 # Wrapper for model args
 class ArgsWrapper:
@@ -48,28 +80,44 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
     # 1) REMOVE BATCH DIMENSION IF PRESENT
     # ======================================================
     if pos_true.ndim == 3:
-        pos_true = pos_true[0]
+        raise ValueError("pos_true should not have a batch dimension")
     if pos_pred.ndim == 3:
-        pos_pred = pos_pred[0]
+        raise ValueError("pos_pred should not have a batch dimension")
 
     if stress_true is not None and stress_true.ndim == 2:
-        stress_true = stress_true[0]
+        raise ValueError("stress_true should not have a batch dimension")
     if stress_pred is not None and stress_pred.ndim == 2:
-        stress_pred = stress_pred[0]
+        raise ValueError("stress_pred should not have a batch dimension")
 
     if node_type_true is not None and node_type_true.ndim == 2:
-        node_type_true = node_type_true[0]
+        raise ValueError("node_type_true should not have a batch dimension")
     if node_type_pred is not None and node_type_pred.ndim == 2:
-        node_type_pred = node_type_pred[0]
+        raise ValueError("node_type_pred should not have a batch dimension")
 
     # ======================================================
     # 2) TRIANGOLAZIONE CELLE QUADRILATERE
     # ======================================================
     tri_i, tri_j, tri_k = [], [], []
     for (i0, i1, i2, i3) in cells:
-        tri_i.extend([i0, i0])
-        tri_j.extend([i1, i2])
-        tri_k.extend([i2, i3])
+        # Face 1: Bottom
+        tri_i.extend([i0])
+        tri_j.extend([i1])
+        tri_k.extend([i2])
+        
+        # Face 2: Side A
+        tri_i.extend([i0])
+        tri_j.extend([i2])
+        tri_k.extend([i3])
+        
+        # Face 3: Side B
+        tri_i.extend([i0])
+        tri_j.extend([i3])
+        tri_k.extend([i1])
+
+        # Face 4: Back/Front (Base 2)
+        tri_i.extend([i1])
+        tri_j.extend([i3])
+        tri_k.extend([i2])
 
     # ======================================================
     # 3) COLORI / HEATMAP
@@ -116,7 +164,8 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
         subplot_titles=(title_true, title_pred)
     )
 
-    # ---------------- TRUE MESH ----------------
+    # ---------------- TRUE MESH (Surface + Wireframe) ----------------
+    # 1. The Surface
     fig.add_trace(
         go.Mesh3d(
             x=pos_true[:, 0], y=pos_true[:, 1], z=pos_true[:, 2],
@@ -125,37 +174,51 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
             colorscale=colorscale,
             showscale=True,
             flatshading=True,
-            opacity=1.0,
+            opacity=0.85, # Slight transparency helps see the grid better
             name="true_mesh"
         ),
         row=1, col=1
     )
+    # 2. The Wireframe
+    fig.add_trace(
+        make_wireframe(pos_true[:, 0], pos_true[:, 1], pos_true[:, 2], 
+                    np.array(tri_i), np.array(tri_j), np.array(tri_k)),
+        row=1, col=1
+    )
 
-    # ---------------- PRED MESH ----------------
-    fig.add_trace(go.Mesh3d(x=pos_pred[:, 0], y=pos_pred[:, 1], z=pos_pred[:, 2],
+    # ---------------- PRED MESH (Surface + Wireframe) ----------------
+    # 1. The Surface
+    fig.add_trace(
+        go.Mesh3d(
+            x=pos_pred[:, 0], y=pos_pred[:, 1], z=pos_pred[:, 2],
             i=tri_i, j=tri_j, k=tri_k,
             intensity=intensity_pred,
             colorscale=colorscale,
             showscale=True,
             flatshading=True,
-            opacity=1.0,
-            name="pred_mesh"), row=1, col=2)
+            opacity=0.85, 
+            name="pred_mesh"
+        ), 
+        row=1, col=2
+    )
+    # 2. The Wireframe
+    fig.add_trace(
+        make_wireframe(pos_pred[:, 0], pos_pred[:, 1], pos_pred[:, 2], 
+                    np.array(tri_i), np.array(tri_j), np.array(tri_k)),
+        row=1, col=2
+    )
 
     # ======================================================
     # 5) SETTINGS
     # ======================================================
     fig.update_scenes(aspectmode="data")
-    fig.update_layout(height=600,
-        width=1200,
-        title_text="Mesh Comparison",
-        showlegend=False)
-
+    fig.update_layout(height=600, width=1200, title_text="Mesh Comparison")
     fig.show()
 
 
 # MULTI-STEP ROLLOUT (USING VELOCITY PREDICTIONS)
 
-def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
+def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
     """
     Autoregressive rollout that:
       - predicts plate velocities + stresses,
@@ -186,8 +249,8 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
     """
 
     device = A.device
-    mean_vec = mean[0, 0].to(device)  # [F]
-    std_vec = std[0, 0].to(device)  # [F]
+    mean_vec = mean_vec.to(device)  # [F]
+    std_vec = std_vec.to(device)  # [F]
     node_type = node_type.to(device)  # [N]
 
     # Masks
@@ -210,7 +273,7 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
     coords_pred_list = []
     stress_pred_list = []
     node_type_pred_list = []
-
+    rollout_error_list = []
     for k in range(steps):
         # ======================================================
         # 1) Predict NORMALIZED velocity + stress
@@ -244,7 +307,7 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
         # ======================================================
         gt_norm_step = X_seq_norm[t0 + 1 + k].to(device)  # [N,F] or [1,N,F]
         if gt_norm_step.dim() == 3:
-            gt_norm_step = gt_norm_step[0]
+            raise ValueError("gt_norm_step should not have a batch dimension")
 
         gt_phys_step = gt_norm_step * std_vec + mean_vec  # [N,F]
         p_rigid_gt = gt_phys_step[:, :3]  # [N,3]
@@ -269,7 +332,10 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
         coords_pred_list.append(p_hat_next.detach().cpu().numpy())
         stress_pred_list.append(stress_next.detach().cpu().numpy())
         node_type_pred_list.append(node_type.detach().cpu().numpy())
-
+        p_gt_next = gt_phys_step[:, :3] 
+        # Calculate MSE: mean((Pred - True)^2)
+        mse_step = torch.mean((p_hat_next - p_gt_next) ** 2)
+        rollout_error_list.append(mse_step.item())
         # ======================================================
         # 6) Build physical features X_{k+1} from (p_hat_{k+1}, v_hat_k+rigid/border overrides)
         # ======================================================
@@ -286,7 +352,7 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
         # Advance p_hat_k -> p_hat_{k+1}
         p_hat = p_hat_next
 
-    return coords_pred_list, stress_pred_list, node_type_pred_list
+    return coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list
 
 
 # MAIN VISUALIZATION LOGIC
@@ -327,9 +393,9 @@ def main():
 
     # remove batch dim if needed
     if X_t_norm.dim() == 3:
-        X_t_norm = X_t_norm[0]
+        raise ValueError("X_t_norm should not have a batch dimension")
     if X_tp_norm.dim() == 3:
-        X_tp_norm = X_tp_norm[0]
+        raise ValueError("X_tp_norm should not have a batch dimension")
 
     # ---------------------- BUILD MODEL ----------------------
     # Load model hyperparameters from the same YAML used in training
@@ -348,7 +414,7 @@ def main():
 
     dim_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
-    model = GraphUNet_DefPlate(dim_in, 3, 1, myargs).to(device)
+    model = Graph_Unet_DefPlate(dim_in, 3, 1, myargs).to(device)
     state = torch.load(CHECKPOINT_PATH, map_location=device)
 
     # Backwards compatibility: old checkpoints used "s_gcn" instead of "start_gcn"
@@ -371,12 +437,12 @@ def main():
     stress_true = stress_true.cpu().numpy()
 
     # Use rollout with 1 step to integrate predicted velocities
-    coords_pred_list, stress_pred_list, node_type_pred_list = rollout(
+    coords_pred_list, stress_pred_list, node_type_pred_list,rollout_error_list = rollout(
         model=model,
         A=A,
         X_seq_norm=X_seq_norm,
-        mean=mean,
-        std=std,
+        mean_vec=mean_vec,
+        std_vec=std_vec,
         t0=t,
         steps=1,
         node_type=node_type,
@@ -413,12 +479,12 @@ def main():
     steps = min(ROLLOUT_STEPS, T - 1 - t)
     print(f"\nPerforming {steps}-step rollout...")
 
-    coords_pred_list, stress_pred_list, node_type_pred_list = rollout(
+    coords_pred_list, stress_pred_list, node_type_pred_list,rollout_error_list = rollout(
         model=model,
         A=A,
         X_seq_norm=X_seq_norm,
-        mean=mean,
-        std=std,
+        mean_vec=mean_vec,
+        std_vec=std_vec,
         t0=t,
         steps=steps,
         node_type=node_type,
@@ -451,6 +517,32 @@ def main():
                             cells=cells, color_mode="stress", title_true=f"Ground Truth t={t + 1 + k}",
                             title_pred=f"Prediction t={t + 1 + k}")
 
+    # ======================================================
+    # PLOT ROLLOUT ERROR
+    # ======================================================
+    print("\nPlotting Rollout Error...")
 
+    fig_err = go.Figure()
+
+    fig_err.add_trace(go.Scatter(
+        x=list(range(1, steps + 1)),
+        y=rollout_error_list,
+        mode='lines+markers',
+        name='MSE Error',
+        line=dict(color='red', width=2),
+        marker=dict(size=6)
+    ))
+
+    fig_err.update_layout(
+        title=f"Rollout Position Error (MSE) over {steps} steps",
+        xaxis_title="Rollout Step",
+        yaxis_title="Mean Squared Error (Physical Units)",
+        template="plotly_white",
+        height=500,
+        width=900,
+        showlegend=True
+    )
+
+    fig_err.show()
 if __name__ == "__main__":
     main()
