@@ -60,15 +60,15 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
         # print(f"boundaries = {(nodetype == BOUNDARY_NODE).any()}")
 
         if vel_mask.any():
-            vel_loss = F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])
+            vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
             weighted_vel_loss = vel_loss * weight_vel
             loss_graph = loss_graph + weighted_vel_loss
             total_vel_loss = total_vel_loss + weighted_vel_loss
             # print(f"\t \t Velocity loss = {F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])}")
         if stress_mask.any():
-            stress_loss = F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])
+            stress_loss = F.huber_loss(pred_stress[stress_mask], target_stress[stress_mask])
             weighted_stress_loss = weight_stress * stress_loss
-            loss_graph = loss_graph + weighted_stress_loss
+            loss_graph = loss_graph + 5 * weighted_stress_loss**2
             total_stress_loss = total_stress_loss + weighted_stress_loss
             # print(f"\t \t Stress loss = {F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])}")
         # Total loss
@@ -80,8 +80,8 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
     return loss_batch_avgd, vel_loss_batch_avgd, stress_loss_batch_avgd
 
 # HARDCODED DATASET AND OUTPUT PATHS
-TFRECORD_PATH = "data/train.tfrecord"
-META_PATH = "data/meta.json"
+TFRECORD_PATH = "deforming_plate/train.tfrecord"
+META_PATH = "deforming_plate/meta.json"
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 PLOTS_DIR = os.path.join(os.path.dirname(__file__), "plots")
 

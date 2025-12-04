@@ -8,12 +8,12 @@ from plotly.subplots import make_subplots
 from data_loader import load_all_trajectories
 from graph_unet_defplate import Graph_Unet_DefPlate
 
-TFRECORD_PATH = "data/train.tfrecord"
-META_PATH = "data/meta.json"
+TFRECORD_PATH = "deforming_plate/train.tfrecord"
+META_PATH = "deforming_plate/meta.json"
 TRAJ_INDEX = 0
 OUTPUT_DIR = "simulation_rollout"
 # Model checkpoint
-CHECKPOINT_PATH = "gnet_ema_multi.pt"
+CHECKPOINT_PATH = "old_models/bad_models/plots_first_good_1000epoch/gnet_ema_multi_old.pt"
 # CHECKPOINT_PATH = "overfit_3000epoch/gnet_ema_multi_bad_3000.pt"
 # index trajectory = [0, 0, 0, 0], time = [284, 94, 83, 70]
 
@@ -43,24 +43,6 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
     """
     Visualizzazione mesh + heatmap stress o node_type.
     """
-
-    # ======================================================
-    # 1) REMOVE BATCH DIMENSION IF PRESENT
-    # ======================================================
-    if pos_true.ndim == 3:
-        pos_true = pos_true[0]
-    if pos_pred.ndim == 3:
-        pos_pred = pos_pred[0]
-
-    if stress_true is not None and stress_true.ndim == 2:
-        stress_true = stress_true[0]
-    if stress_pred is not None and stress_pred.ndim == 2:
-        stress_pred = stress_pred[0]
-
-    if node_type_true is not None and node_type_true.ndim == 2:
-        node_type_true = node_type_true[0]
-    if node_type_pred is not None and node_type_pred.ndim == 2:
-        node_type_pred = node_type_pred[0]
 
     # ======================================================
     # 2) TRIANGOLAZIONE CELLE QUADRILATERE
@@ -155,7 +137,7 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
 
 # MULTI-STEP ROLLOUT (USING VELOCITY PREDICTIONS)
 
-def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
+def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
     """
     Autoregressive rollout that:
       - predicts plate velocities + stresses,
@@ -184,10 +166,9 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
     stress_pred_list : list of [N]   np.arrays
     node_type_pred_list : list of [N] np.arrays
     """
-
     device = A.device
-    mean_vec = mean[0, 0].to(device)  # [F]
-    std_vec = std[0, 0].to(device)  # [F]
+    mean_vec = mean_vec.to(device)  # [F]
+    std_vec = std_vec.to(device)  # [F]
     node_type = node_type.to(device)  # [N]
 
     # Masks
@@ -197,8 +178,6 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
 
     # ---------- initial state at t0 ----------
     current_norm = X_seq_norm[t0].to(device)  # [N,F] or [1,N,F]
-    if current_norm.dim() == 3:
-        current_norm = current_norm[0]
 
     current_phys = current_norm * std_vec + mean_vec  # [N,F]
     # This is p_hat_0 := p_0 (ground truth at t0)
@@ -243,8 +222,6 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
         #    at time t0 + 1 + k
         # ======================================================
         gt_norm_step = X_seq_norm[t0 + 1 + k].to(device)  # [N,F] or [1,N,F]
-        if gt_norm_step.dim() == 3:
-            gt_norm_step = gt_norm_step[0]
 
         gt_phys_step = gt_norm_step * std_vec + mean_vec  # [N,F]
         p_rigid_gt = gt_phys_step[:, :3]  # [N,3]
@@ -260,7 +237,7 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
         # 4) Fixed borders: fixed positions + zero velocity
         # ======================================================
         p_hat_next[border_mask] = pos_border_ref
-        vel_pred[border_mask] = 0.0  # explicitly zero velocity
+        vel_pred[border_mask] = 0.0  # explicitly zero velocity.  SOMEONE CAN SIMPLIFY THIS LINE SINCE P_HAT WAS DEFINED AS A CLONE SO NO NEED TO RE ASSIGN CONSTANTS EVERYTIME
         # stress_next[border_mask] stays as model prediction
 
         # ======================================================
@@ -275,7 +252,7 @@ def rollout(model, A, X_seq_norm, mean, std, t0, steps, node_type):
         # ======================================================
         X_next_phys = torch.zeros_like(current_phys)
         X_next_phys[:, :3] = p_hat_next  # positions
-        X_next_phys[:, 3] = node_type.float()  # node type
+        X_next_phys[:, 3] = node_type  # node type
         X_next_phys[:, 4:7] = vel_pred  # velocity field
         X_next_phys[:, 7] = stress_next  # stress
 
@@ -327,10 +304,9 @@ def main():
 
     # remove batch dim if needed
     if X_t_norm.dim() == 3:
-        X_t_norm = X_t_norm[0]
+        raise ValueError("X_t_norm should not have batch dim at this point.")
     if X_tp_norm.dim() == 3:
-        X_tp_norm = X_tp_norm[0]
-
+        raise ValueError("X_tp_norm should not have batch dim at this point.")
     # ---------------------- BUILD MODEL ----------------------
     # Load model hyperparameters from the same YAML used in training
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
@@ -375,8 +351,8 @@ def main():
         model=model,
         A=A,
         X_seq_norm=X_seq_norm,
-        mean=mean,
-        std=std,
+        mean_vec=mean_vec,
+        std_vec=std_vec,
         t0=t,
         steps=1,
         node_type=node_type,
@@ -417,8 +393,8 @@ def main():
         model=model,
         A=A,
         X_seq_norm=X_seq_norm,
-        mean=mean,
-        std=std,
+        mean_vec=mean_vec,
+        std_vec=std_vec,
         t0=t,
         steps=steps,
         node_type=node_type,
@@ -430,7 +406,7 @@ def main():
         # true values at step k
         X_tp_k_norm = X_seq_norm[t + 1 + k]
         if X_tp_k_norm.dim() == 3:
-            X_tp_k_norm = X_tp_k_norm[0]
+            raise ValueError("X_tp_k_norm should not have batch dim at this point.")
 
         coords_true_norm = X_tp_k_norm[:, :3]
         coords_true = coords_true_norm * std_vec[:3] + mean_vec[:3]
