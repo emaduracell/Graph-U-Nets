@@ -15,9 +15,8 @@ from torch.optim.lr_scheduler import ExponentialLR
 # NORMAL_NODE = torch.Tensor([0., 0.])
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
-VELOCITY_INDEXES = slice(5, 8)  # like 5:8
-STRESS_INDEXES = slice(8, 9)  # like 8:9
-
+VELOCITY_INDEXES = slice(5, 8)     # like 5:8
+STRESS_INDEXES = slice(8, 9)     # like 8:9
 
 def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
     """
@@ -56,7 +55,7 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
         weight_stress = torch.count_nonzero(stress_mask) / (torch.count_nonzero(stress_mask) + \
                                                             torch.count_nonzero(vel_mask))
         weight_vel = torch.count_nonzero(vel_mask) / (torch.count_nonzero(stress_mask) + \
-                                                      torch.count_nonzero(vel_mask))
+                                                            torch.count_nonzero(vel_mask))
         # print(f"type(vel_mask) = {type(vel_mask)} \t shape(vel_mask) = {vel_mask.shape} \t weight_vel = {weight_vel} "
         #       f"\t {pred_vel[vel_mask].shape}")
         # print(f"type(stress_mask) = {type(stress_mask)} \t shape(stress_mask) = {stress_mask.shape} weight_stress = "
@@ -82,7 +81,6 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
     vel_loss_batch_avgd = total_vel_loss / num_graphs
     stress_loss_batch_avgd = total_stress_loss / num_graphs
     return loss_batch_avgd, vel_loss_batch_avgd, stress_loss_batch_avgd
-
 
 # HARDCODED DATASET AND OUTPUT PATHS
 PREPROCESSED_DATA_PATH = "data/preprocessed_train.pt"
@@ -134,7 +132,7 @@ def compute_batch_metrics(preds_list, targets_list, node_types_list):
             count += vel_mask.sum().item() * 3
         if stress_mask.any():
             mae_graph += F.l1_loss(pred_stress[stress_mask], target_stress[stress_mask], reduction='sum').item()
-            count += stress_mask.sum().item() * 1  #
+            count += stress_mask.sum().item() * 1 #
 
         total_mae += mae_graph
 
@@ -211,14 +209,14 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
 
     # Concatenate
     if all_vel_preds:
-        cat_vel_preds = np.concatenate(all_vel_preds, axis=0)  # [Total_N_vel, 3]
+        cat_vel_preds = np.concatenate(all_vel_preds, axis=0) # [Total_N_vel, 3]
         cat_vel_targets = np.concatenate(all_vel_targets, axis=0)
     else:
         cat_vel_preds = np.zeros((0, 3))
         cat_vel_targets = np.zeros((0, 3))
 
     if all_stress_preds:
-        cat_stress_preds = np.concatenate(all_stress_preds, axis=0)  # [Total_N_stress, 1]
+        cat_stress_preds = np.concatenate(all_stress_preds, axis=0) # [Total_N_stress, 1]
         cat_stress_targets = np.concatenate(all_stress_targets, axis=0)
     else:
         cat_stress_preds = np.zeros((0, 1))
@@ -388,7 +386,7 @@ def train_gnet_ema(device):
         epoch_grad_norm = 0.0
         num_batches = 0
 
-        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_ids \
+        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_ids\
                 in train_loader:
             adj_mat_list = [A.to(device) for A in adj_mat_list]
             feat_t_mat_list = [X_t.to(device) for X_t in feat_t_mat_list]

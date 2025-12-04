@@ -7,9 +7,10 @@ from plotly.subplots import make_subplots
 
 from data_loader import load_all_trajectories
 from model_entire import GraphUNet_DefPlate
+
+# Global variable
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
-TRAJ_INDEX = 0
 OUTPUT_DIR = "simulation_rollout"
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 BOUNDARY_NODE = 3
@@ -18,11 +19,13 @@ SPHERE_NODE = 1
 NODE_TYPE_INDEXES = slice(3, 5)
 VELOCITY_INDEXES = slice(5, 8)  # like 5:8
 STRESS_INDEXES = slice(8, 9)  # like 8:9
-# Visualization settings
+
+# Visualization settings  [374,356,302,387] overfit_traj_id: 2
+TRAJ_INDEX = 2
 T_STEP = 302 # time index t (visualize t -> t+1)
 ROLLOUT = False  # if True, run multi-step rollout
 ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
-RENDER_MODE = "no_sphere"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
+RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
 
 def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     """
