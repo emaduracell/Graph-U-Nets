@@ -11,18 +11,16 @@ TFRECORD_PATH = "deforming_plate/train.tfrecord"
 META_PATH = "deforming_plate/meta.json"
 TRAJ_INDEX = 0
 OUTPUT_DIR = "simulation_rollout"
-# Model checkpoint
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
-# CHECKPOINT_PATH = "overfit_3000epoch/gnet_ema_multi_bad_3000.pt"
-# index trajectory = [0, 0, 0, 0], time = [284, 94, 83, 70]
-
-# 3000 index trajectory = [0, 0, 0, 0], time = [350, 222, 334, 135]
-# 1000 good index trajectory = [0, 0, 0, 0], time = [393, 162, 48, 174]
-
+BOUNDARY_NODE = 3
+NORMAL_NODE = 0
+VELOCITY_INDEXES = slice(5, 8)  # like 5:8
+STRESS_INDEXES = slice(8, 9)  # like 8:9
 # Visualization settings
 T_STEP = 83 # time index t (visualize t -> t+1)
 ROLLOUT = True  # if True, run multi-step rollout
 ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
+
 def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     """
     Creates a Scatter3d trace that draws the edges of the triangles.
@@ -222,7 +220,7 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
     """
     Autoregressive rollout that:
       - predicts plate velocities + stresses,
-      - keeps borders fixed (node_type == 6),
+      - keeps borders fixed (node_type == 3),
       - drives rigid body (node_type == 1) with scripted (ground-truth) motion.
 
     Parameters
@@ -256,7 +254,7 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
     # Masks
     deform_mask = (node_type == 0)  # deformable plate
     rigid_mask = (node_type == 1)  # rigid body
-    border_mask = (node_type == 6)  # fixed borders
+    border_mask = (node_type == 3)  # fixed borders
 
     # ---------- initial state at t0 ----------
     current_norm = X_seq_norm[t0].to(device)  # [N,F] or [1,N,F]
@@ -433,7 +431,7 @@ def main():
     coords_true = X_tp_norm[:, :3] * std_vec[:3] + mean_vec[:3]  # [N,3]
     pos_true = coords_true.cpu().numpy()
 
-    stress_true = X_tp_norm[:, 7] * std_vec[7] + mean_vec[7]  # [N] (von Mises stress)
+    stress_true = X_tp_norm[:, STRESS_INDEXES] * std_vec[STRESS_INDEXES] + mean_vec[STRESS_INDEXES]  # [N] (von Mises stress)
     stress_true = stress_true.cpu().numpy()
 
     # Use rollout with 1 step to integrate predicted velocities
@@ -503,8 +501,8 @@ def main():
         coords_true = coords_true.cpu().numpy()
 
         # Ground-truth von Mises stress at this step
-        stress_true_norm = X_tp_k_norm[:, 7]
-        stress_true = (stress_true_norm * std_vec[7] + mean_vec[7]).cpu().numpy()
+        stress_true_norm = X_tp_k_norm[:, STRESS_INDEXES]
+        stress_true = (stress_true_norm * std_vec[STRESS_INDEXES] + mean_vec[STRESS_INDEXES]).cpu().numpy()
 
         node_type_true = node_type_np
 

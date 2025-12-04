@@ -15,8 +15,9 @@ from torch.optim.lr_scheduler import ExponentialLR
 # NORMAL_NODE = torch.Tensor([0., 0.])
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
-VELOCITY_INDEXES = slice(5, 8)     # like 5:8
-STRESS_INDEXES   = slice(8, 9)     # like 8:9
+VELOCITY_INDEXES = slice(5, 8)  # like 5:8
+STRESS_INDEXES = slice(8, 9)  # like 8:9
+
 
 def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
     """
@@ -55,7 +56,7 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
         weight_stress = torch.count_nonzero(stress_mask) / (torch.count_nonzero(stress_mask) + \
                                                             torch.count_nonzero(vel_mask))
         weight_vel = torch.count_nonzero(vel_mask) / (torch.count_nonzero(stress_mask) + \
-                                                            torch.count_nonzero(vel_mask))
+                                                      torch.count_nonzero(vel_mask))
         # print(f"type(vel_mask) = {type(vel_mask)} \t shape(vel_mask) = {vel_mask.shape} \t weight_vel = {weight_vel} "
         #       f"\t {pred_vel[vel_mask].shape}")
         # print(f"type(stress_mask) = {type(stress_mask)} \t shape(stress_mask) = {stress_mask.shape} weight_stress = "
@@ -81,6 +82,7 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
     vel_loss_batch_avgd = total_vel_loss / num_graphs
     stress_loss_batch_avgd = total_stress_loss / num_graphs
     return loss_batch_avgd, vel_loss_batch_avgd, stress_loss_batch_avgd
+
 
 # HARDCODED DATASET AND OUTPUT PATHS
 PREPROCESSED_DATA_PATH = "data/preprocessed_train.pt"
@@ -116,24 +118,24 @@ def compute_batch_metrics(preds_list, targets_list, node_types_list):
     """Compute MAE for the batch."""
     total_mae = 0.0
     count = 0
-    
+
     for pred, target, nt in zip(preds_list, targets_list, node_types_list):
         vel_mask = (nt == NORMAL_NODE)
         stress_mask = (nt == NORMAL_NODE) | (nt == BOUNDARY_NODE)
-        
+
         target_vel = target[:, VELOCITY_INDEXES]
         target_stress = target[:, STRESS_INDEXES]
         pred_vel = pred[:, :3]
         pred_stress = pred[:, 3:4]
-        
+
         mae_graph = 0.0
         if vel_mask.any():
             mae_graph += F.l1_loss(pred_vel[vel_mask], target_vel[vel_mask], reduction='sum').item()
             count += vel_mask.sum().item() * 3
         if stress_mask.any():
             mae_graph += F.l1_loss(pred_stress[stress_mask], target_stress[stress_mask], reduction='sum').item()
-            count += stress_mask.sum().item() * 1 #
-            
+            count += stress_mask.sum().item() * 1  #
+
         total_mae += mae_graph
 
     return total_mae, count
@@ -159,19 +161,19 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
     :return:
     """
     print("Generating final evaluation plots...")
-    
+
     # activations (using a hook on one batch, in particular im keeping only the last graph)
     activations = {}
     # Hook into the velocity_mlp input to get latent features
     handle = model.velocity_mlp.register_forward_hook(
         lambda m, i, o: activations.update({'latent_features': i[0].detach().cpu().numpy()})
     )
-    
+
     all_vel_preds = []
     all_vel_targets = []
     all_stress_preds = []
     all_stress_targets = []
-    
+
     model.eval()
     with torch.no_grad():
         for i, (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids) \
@@ -181,7 +183,7 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
             hs = [X_t.to(device) for X_t in feat_t_mat_list]
             targets = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
             node_types = [nt.to(device) for nt in node_types]
-            
+
             # Forward
             preds_list = model(gs, hs, targets, node_types)
             # Remove hook after first batch
@@ -192,14 +194,14 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
             for pred, target, nodetype in zip(preds_list, targets, node_types):
                 vel_mask = (nodetype == NORMAL_NODE)
                 stress_mask = (nodetype == NORMAL_NODE) | (nodetype == BOUNDARY_NODE)
-                
+
                 # Velocity
                 if vel_mask.any():
                     p_vel = pred[:, :3][vel_mask]
                     t_vel = target[:, 4:7][vel_mask]
                     all_vel_preds.append(p_vel.cpu().numpy())
                     all_vel_targets.append(t_vel.cpu().numpy())
-                    
+
                 # Stress
                 if stress_mask.any():
                     p_stress = pred[:, 3:4][stress_mask]
@@ -209,23 +211,23 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
 
     # Concatenate
     if all_vel_preds:
-        cat_vel_preds = np.concatenate(all_vel_preds, axis=0) # [Total_N_vel, 3]
+        cat_vel_preds = np.concatenate(all_vel_preds, axis=0)  # [Total_N_vel, 3]
         cat_vel_targets = np.concatenate(all_vel_targets, axis=0)
     else:
         cat_vel_preds = np.zeros((0, 3))
         cat_vel_targets = np.zeros((0, 3))
-        
+
     if all_stress_preds:
-        cat_stress_preds = np.concatenate(all_stress_preds, axis=0) # [Total_N_stress, 1]
+        cat_stress_preds = np.concatenate(all_stress_preds, axis=0)  # [Total_N_stress, 1]
         cat_stress_targets = np.concatenate(all_stress_targets, axis=0)
     else:
         cat_stress_preds = np.zeros((0, 1))
         cat_stress_targets = np.zeros((0, 1))
-        
+
     # Prepare for plotting: We pass list of arrays: [VelX, VelY, VelZ, Stress]
     final_preds = [cat_vel_preds[:, 0], cat_vel_preds[:, 1], cat_vel_preds[:, 2], cat_stress_preds[:, 0]]
     final_targets = [cat_vel_targets[:, 0], cat_vel_targets[:, 1], cat_vel_targets[:, 2], cat_stress_targets[:, 0]]
-    
+
     make_final_plots(save_dir=PLOTS_DIR, train_losses=train_losses, val_losses=val_losses,
                      metric_name='MAE', train_metrics=train_maes, val_metrics=val_maes, grad_norms=grad_norms,
                      model=model, activations=activations, predictions=final_preds, targets=final_targets,
@@ -269,14 +271,14 @@ def train_gnet_ema(device):
     print(" LOADING PREPROCESSED DATA")
     print("=================================================\n")
     print(f"\t Preprocessed data: {PREPROCESSED_DATA_PATH}")
-    
+
     # Load preprocessed trajectories
     if not os.path.exists(PREPROCESSED_DATA_PATH):
         raise FileNotFoundError(
             f"Preprocessed data not found at {PREPROCESSED_DATA_PATH}\n"
             f"Please run 'python preprocess_data.py' first to generate the preprocessed data."
         )
-    
+
     list_of_trajs = torch.load(PREPROCESSED_DATA_PATH)
     print(f"\t Loaded {len(list_of_trajs)} preprocessed trajectories")
 
@@ -310,7 +312,7 @@ def train_gnet_ema(device):
         # Get overfit configuration
         overfit_traj_id = train_cfg.get('overfit_traj_id', None)
         overfit_time_idx_list = train_cfg.get('overfit_time_idx', None)
-        
+
         # Filter dataset to match overfit criteria
         overfit_indices = []
         print(f"len(dataset)={len(dataset)}")
@@ -324,16 +326,16 @@ def train_gnet_ema(device):
                 if overfit_time_idx_list is not None and sample['time_idx'] != i:
                     continue
                 overfit_indices.append(idx)
-        
+
         if len(overfit_indices) == 0:
             raise ValueError(f"No samples found matching overfit criteria: traj_id={overfit_traj_id}, "
                              f"time_idx={overfit_time_idx_list}")
-        
+
         # Create overfit subset
         overfit_set = Subset(dataset, overfit_indices)
         train_loader = DataLoader(overfit_set, batch_size=len(overfit_indices), shuffle=False, collate_fn=collate_unet)
         test_loader = train_loader
-        
+
         print(f"\nOverfitting on trajectory {overfit_traj_id} with {len(overfit_indices)} time steps")
         overfit_batch = next(iter(train_loader))
         (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_indices) \
@@ -382,11 +384,11 @@ def train_gnet_ema(device):
         total_train_stress_loss = 0.0
         total_train_mae = 0.0
         total_train_count = 0
-        
+
         epoch_grad_norm = 0.0
         num_batches = 0
 
-        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_ids\
+        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_ids \
                 in train_loader:
             adj_mat_list = [A.to(device) for A in adj_mat_list]
             feat_t_mat_list = [X_t.to(device) for X_t in feat_t_mat_list]
@@ -430,7 +432,7 @@ def train_gnet_ema(device):
         total_test_vel_loss = 0.0
         total_test_mae = 0.0
         total_test_count = 0
-        
+
         with torch.no_grad():
             for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids \
                     in test_loader:
@@ -446,7 +448,7 @@ def train_gnet_ema(device):
                 total_test_vel_loss += vel_loss_batch_avgd
                 total_test_stress_loss += stress_loss_batch_avgd
                 total_test_loss += batch_loss.item()
-                
+
                 mae, count = compute_batch_metrics(preds_list, feat_mat_cpu_list_tp1, node_types_cpu)
                 total_test_mae += mae
                 total_test_count += count
@@ -457,10 +459,10 @@ def train_gnet_ema(device):
         avg_train_vel_loss = total_train_vel_loss / len(train_loader)
         avg_test_stress_loss = total_test_stress_loss / len(test_loader)
         avg_test_vel_loss = total_test_vel_loss / len(test_loader)
-        
+
         avg_train_mae = total_train_mae / total_train_count if total_train_count > 0 else 0.0
         avg_test_mae = total_test_mae / total_test_count if total_test_count > 0 else 0.0
-        
+
         train_losses.append(avg_train)
         train_vel_losses.append(avg_train_vel_loss)
         train_stress_losses.append(avg_train_stress_loss)
