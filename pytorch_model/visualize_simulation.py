@@ -6,9 +6,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from data_loader import load_all_trajectories
-from graph_unet_defplate import Graph_Unet_DefPlate
-TFRECORD_PATH = "deforming_plate/train.tfrecord"
-META_PATH = "deforming_plate/meta.json"
+from model_entire import GraphUNet_DefPlate
+TFRECORD_PATH = "data/train.tfrecord"
+META_PATH = "data/meta.json"
 TRAJ_INDEX = 0
 OUTPUT_DIR = "simulation_rollout"
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
@@ -19,10 +19,10 @@ NODE_TYPE_INDEXES = slice(3, 5)
 VELOCITY_INDEXES = slice(5, 8)  # like 5:8
 STRESS_INDEXES = slice(8, 9)  # like 8:9
 # Visualization settings
-T_STEP = 83 # time index t (visualize t -> t+1)
-ROLLOUT = True  # if True, run multi-step rollout
+T_STEP = 302 # time index t (visualize t -> t+1)
+ROLLOUT = False  # if True, run multi-step rollout
 ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
-RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
+RENDER_MODE = "no_sphere"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
 
 def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     """
@@ -459,7 +459,7 @@ def main():
 
     dim_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
-    model = Graph_Unet_DefPlate(dim_in, 3, 1, myargs).to(device)
+    model = GraphUNet_DefPlate(dim_in, 3, 1, myargs).to(device)
     state = torch.load(CHECKPOINT_PATH, map_location=device)
 
     # Backwards compatibility: old checkpoints used "s_gcn" instead of "start_gcn"
