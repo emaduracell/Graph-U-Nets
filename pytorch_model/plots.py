@@ -5,6 +5,12 @@ import torch
 import textwrap
 import yaml
 
+# Keep these aligned with the feature layout in data_loader.py and the masks in train.py
+NORMAL_NODE = 0
+BOUNDARY_NODE = 3
+VELOCITY_INDEXES = slice(5, 8)  # [vel_x, vel_y, vel_z]
+STRESS_INDEXES = slice(8, 9)    # [stress]
+
 def load_config(config_path):
     """Load model and training configuration from YAML file."""
     with open(config_path, 'r') as f:
@@ -228,13 +234,25 @@ def make_final_plots(save_dir, train_losses, val_losses, metric_name, train_metr
         iter_predictions = predictions
         iter_targets = targets
     else:
-        num_features = predictions.shape[1]
-        feature_labels = [f'Feature {i}' for i in range(num_features)]
-        if num_features == 4:
+        # If full feature tensors are passed (e.g., with positions, node types, velocities, stress),
+        # slice out only velocity and stress with the same indexes used for training and loss.
+        if predictions.ndim == 2 and predictions.shape[1] >= STRESS_INDEXES.stop:
+            vel_pred = predictions[:, VELOCITY_INDEXES]
+            stress_pred = predictions[:, STRESS_INDEXES]
+            vel_tgt = targets[:, VELOCITY_INDEXES]
+            stress_tgt = targets[:, STRESS_INDEXES]
+            iter_predictions = [vel_pred[:, i] for i in range(vel_pred.shape[1])] + [stress_pred[:, 0]]
+            iter_targets = [vel_tgt[:, i] for i in range(vel_tgt.shape[1])] + [stress_tgt[:, 0]]
             feature_labels = ['Vel X', 'Vel Y', 'Vel Z', 'Stress']
+            num_features = len(iter_predictions)
+        else:
+            num_features = predictions.shape[1]
+            feature_labels = [f'Feature {i}' for i in range(num_features)]
+            if num_features == 4:
+                feature_labels = ['Vel X', 'Vel Y', 'Vel Z', 'Stress']
 
-        iter_predictions = [predictions[:, i] for i in range(num_features)]
-        iter_targets = [targets[:, i] for i in range(num_features)]
+            iter_predictions = [predictions[:, i] for i in range(num_features)]
+            iter_targets = [targets[:, i] for i in range(num_features)]
 
     pred_dir = os.path.join(save_dir, 'pred_vs_true')
     os.makedirs(pred_dir, exist_ok=True)
