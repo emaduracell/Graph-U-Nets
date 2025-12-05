@@ -63,13 +63,13 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
         # print(f"boundaries = {(nodetype == BOUNDARY_NODE).any()}")
 
         if vel_mask.any():
-            vel_loss = F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])
+            vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
             weighted_vel_loss = vel_loss * weight_vel
             loss_graph = loss_graph + weighted_vel_loss
             total_vel_loss = total_vel_loss + weighted_vel_loss
             # print(f"\t \t Velocity loss = {F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])}")
         if stress_mask.any():
-            stress_loss = F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])
+            stress_loss = F.huber_loss(pred_stress[stress_mask], target_stress[stress_mask])
             weighted_stress_loss = weight_stress * stress_loss
             loss_graph = loss_graph + weighted_stress_loss
             total_stress_loss = total_stress_loss + weighted_stress_loss
@@ -176,7 +176,7 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
     with torch.no_grad():
         for i, (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids) \
                 in enumerate(test_loader):
-            print(f"index trajectory = {traj_ids}, time = {time_ids}")
+            print(f"[run_final_evaluation] index trajectory = {traj_ids}, time = {time_ids}")
             gs = [A.to(device) for A in adj_mat_list]
             hs = [X_t.to(device) for X_t in feat_t_mat_list]
             targets = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]

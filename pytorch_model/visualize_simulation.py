@@ -23,11 +23,12 @@ VELOCITY_INDEXES = slice(5, 8)  # like 5:8
 STRESS_INDEXES = slice(8, 9)  # like 8:9
 
 # Visualization settings  [374,356,302,387] overfit_traj_id: 2
-TRAJ_INDEX = 2
-T_STEP = 302 # time index t (visualize t -> t+1)
-ROLLOUT = False  # if True, run multi-step rollout
-ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
+TRAJ_INDEX = 0
+T_STEP = 0  # time index t (visualize t -> t+1)
+ROLLOUT = True  # if True, run multi-step rollout
+ROLLOUT_STEPS = 100  # maximum number of rollout steps for multi-step visualization
 RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
+
 
 def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     """
@@ -37,18 +38,18 @@ def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     # To do this efficiently in Plotly without loops, we stack coordinates
     # in the order: point_i, point_j, point_k, point_i, None
     # 'None' breaks the line so we don't connect separate triangles.
-    
+
     tri_points = np.vstack([
-        i, j, k, i, 
-        np.full_like(i, -1) # Placeholder for None
+        i, j, k, i,
+        np.full_like(i, -1)  # Placeholder for None
     ]).T.flatten()
-    
+
     # Map indices to coordinates
     # We replace the -1 indices with NaN or None effectively by masking later
     xe = x[tri_points]
     ye = y[tri_points]
     ze = z[tri_points]
-    
+
     # Insert None where we had the -1 index to break the lines
     # (The standard Plotly trick for disconnected lines)
     xe[4::5] = None
@@ -61,8 +62,9 @@ def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
         line=dict(color=color, width=width),
         name='wireframe',
         showlegend=False,
-        hoverinfo='skip' # Don't show tooltips for the grid lines
+        hoverinfo='skip'  # Don't show tooltips for the grid lines
     )
+
 
 # Wrapper for model args
 class ArgsWrapper:
@@ -109,12 +111,12 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
         tri_i.extend([i0])
         tri_j.extend([i1])
         tri_k.extend([i2])
-        
+
         # Face 2: Side A
         tri_i.extend([i0])
         tri_j.extend([i2])
         tri_k.extend([i3])
-        
+
         # Face 3: Side B
         tri_i.extend([i0])
         tri_j.extend([i3])
@@ -180,15 +182,15 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
             colorscale=colorscale,
             showscale=True,
             flatshading=True,
-            opacity=0.85, # Slight transparency helps see the grid better
+            opacity=0.85,  # Slight transparency helps see the grid better
             name="true_mesh"
         ),
         row=1, col=1
     )
     # 2. The Wireframe
     fig.add_trace(
-        make_wireframe(pos_true[:, 0], pos_true[:, 1], pos_true[:, 2], 
-                    np.array(tri_i), np.array(tri_j), np.array(tri_k)),
+        make_wireframe(pos_true[:, 0], pos_true[:, 1], pos_true[:, 2],
+                       np.array(tri_i), np.array(tri_j), np.array(tri_k)),
         row=1, col=1
     )
 
@@ -202,15 +204,15 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
             colorscale=colorscale,
             showscale=True,
             flatshading=True,
-            opacity=0.85, 
+            opacity=0.85,
             name="pred_mesh"
-        ), 
+        ),
         row=1, col=2
     )
     # 2. The Wireframe
     fig.add_trace(
-        make_wireframe(pos_pred[:, 0], pos_pred[:, 1], pos_pred[:, 2], 
-                    np.array(tri_i), np.array(tri_j), np.array(tri_k)),
+        make_wireframe(pos_pred[:, 0], pos_pred[:, 1], pos_pred[:, 2],
+                       np.array(tri_i), np.array(tri_j), np.array(tri_k)),
         row=1, col=2
     )
 
@@ -382,7 +384,7 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
         coords_pred_list.append(p_hat_next.detach().cpu().numpy())
         stress_pred_list.append(stress_next.detach().cpu().numpy())
         node_type_pred_list.append(node_type.detach().cpu().numpy())
-        p_gt_next = gt_phys_step[:, :3] 
+        p_gt_next = gt_phys_step[:, :3]
         # Calculate MSE: mean((Pred - True)^2)
         mse_step = torch.mean((p_hat_next - p_gt_next) ** 2)
         rollout_error_list.append(mse_step.item())
@@ -488,11 +490,12 @@ def main():
     coords_true = X_tp_norm[:, :3] * std_vec[:3] + mean_vec[:3]  # [N,3]
     pos_true = coords_true.cpu().numpy()
 
-    stress_true = X_tp_norm[:, STRESS_INDEXES] * std_vec[STRESS_INDEXES] + mean_vec[STRESS_INDEXES]  # [N,1] (von Mises stress)
+    stress_true = X_tp_norm[:, STRESS_INDEXES] * std_vec[STRESS_INDEXES] + mean_vec[
+        STRESS_INDEXES]  # [N,1] (von Mises stress)
     stress_true = stress_true.cpu().numpy().squeeze(-1)
 
     # Use rollout with 1 step to integrate predicted velocities
-    coords_pred_list, stress_pred_list, node_type_pred_list,rollout_error_list = rollout(
+    coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list = rollout(
         model=model,
         A=A,
         X_seq_norm=X_seq_norm,
@@ -538,7 +541,7 @@ def main():
     steps = min(ROLLOUT_STEPS, T - 1 - t)
     print(f"\nPerforming {steps}-step rollout...")
 
-    coords_pred_list, stress_pred_list, node_type_pred_list,rollout_error_list = rollout(
+    coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list = rollout(
         model=model,
         A=A,
         X_seq_norm=X_seq_norm,
@@ -607,5 +610,7 @@ def main():
     )
 
     fig_err.show()
+
+
 if __name__ == "__main__":
     main()
