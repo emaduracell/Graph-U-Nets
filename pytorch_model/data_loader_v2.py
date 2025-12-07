@@ -7,44 +7,30 @@ NORMAL_NODE = [0, 0]  # value 0 (NORMAL)
 SPHERE_NODE = [1, 0]  # value 1 (SPHERE)
 BOUNDARY_NODE = [0, 1]  # value 3 (BOUNDARY)
 
-
 def _build_tfrecord_description(meta):
     """
-    Build the tfrecord_loader description so the library decodes bytes into
-    correctly typed numpy arrays. This avoids manual byte casting.
+    Build the tfrecord_loader description. 
+    We force everything to 'byte' because the TFRecord contains 
+    raw binary dumps of the numpy arrays (BytesList).
     """
-    dtype_map = {
-        "float32": "float",
-        "int32": "int",
-        "bytes": "byte",
-    }
     description = {}
     for name, info in meta["features"].items():
-        tf_dtype = dtype_map.get(info["dtype"], "byte")
-        description[name] = (tf_dtype, tuple(info["shape"]))
+        # Always request 'byte' so we get the raw binary data
+        description[name] = "byte"
     return description
-
-
 def cast_trajectory_from_record(record, meta):
     """
-    Casts the TFRecord into numpy arrays.
-    The feature meta["features"] is a dict that contains info about the features and their shape.
-
-    :param record:
-        A TFRecord object
-    :param meta:
-        json file
-
-    :return trajectory_dict: Dict
-        A dict containing all trajectory features
+    Casts the TFRecord bytes into numpy arrays.
+    Uses np.frombuffer to decode the raw bytes read by the loader.
     """
-
     shapes = meta["features"]
-    world_pos = np.asarray(record["world_pos"], dtype=np.float32).reshape(shapes["world_pos"]["shape"])
-    stress = np.asarray(record["stress"], dtype=np.float32).reshape(shapes["stress"]["shape"])
-    node_type = np.asarray(record["node_type"], dtype=np.int32).reshape(shapes["node_type"]["shape"])
-    mesh_pos = np.asarray(record["mesh_pos"], dtype=np.float32).reshape(shapes["mesh_pos"]["shape"])
-    mesh_cells = np.asarray(record["cells"], dtype=np.int32).reshape(shapes["cells"]["shape"])
+    
+    # USE np.frombuffer INSTEAD OF np.asarray
+    world_pos = np.frombuffer(record["world_pos"], dtype=np.float32).reshape(shapes["world_pos"]["shape"])
+    stress = np.frombuffer(record["stress"], dtype=np.float32).reshape(shapes["stress"]["shape"])
+    node_type = np.frombuffer(record["node_type"], dtype=np.int32).reshape(shapes["node_type"]["shape"])
+    mesh_pos = np.frombuffer(record["mesh_pos"], dtype=np.float32).reshape(shapes["mesh_pos"]["shape"])
+    mesh_cells = np.frombuffer(record["cells"], dtype=np.int32).reshape(shapes["cells"]["shape"])
 
     # remove extra dims
     if node_type.shape[0] == 1:
@@ -53,6 +39,7 @@ def cast_trajectory_from_record(record, meta):
         mesh_pos = mesh_pos[0]
     if mesh_cells.shape[0] == 1:
         mesh_cells = mesh_cells[0]
+        
     trajectory_dict = {
         "world_pos": world_pos.astype(np.float32),
         "stress": stress.astype(np.float32),
@@ -231,9 +218,23 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
     for traj in list_of_trajs:
         X = traj['X_seq_norm']
         std_acc += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
-
+    # 1. Calculate independent stats first
     std_dev = torch.sqrt(std_acc / (element_num - 1))
 
+
+    # 2. Find the max sigma for Position (cols 0,1,2)
+    max_std_pos = std_dev[0:3].max()
+    # Apply to all position columns
+    std_dev[0:3] = max_std_pos
+
+    # 3. Find the max sigma for Velocity (cols 5,6,7)
+    max_std_vel = std_dev[5:8].max()
+    # Apply to all velocity columns
+    std_dev[5:8] = max_std_vel
+
+    # Now std_dev has the SAME scaling factor for x, y, z
+    mean_b = mean.view(1, 1, -1)
+    std_b = std_dev.view(1, 1, -1)
     NODE_TYPE_START = 3
     NODE_TYPE_END = 5
     mean[NODE_TYPE_START:NODE_TYPE_END] = 0.0
@@ -241,6 +242,7 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
 
     mean_b = mean.view(1, 1, -1)
     std_b = std_dev.view(1, 1, -1)
+
     for traj in list_of_trajs:
         traj['mean'] = mean_b
         traj['std'] = std_b

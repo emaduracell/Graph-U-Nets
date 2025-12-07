@@ -298,7 +298,23 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         X = traj['X_seq_norm']
         std_acc += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
 
+    # 1. Calculate independent stats first
     std_dev = torch.sqrt(std_acc / (element_num - 1))
+
+
+    # 2. Find the max sigma for Position (cols 0,1,2)
+    max_std_pos = std_dev[0:3].max()
+    # Apply to all position columns
+    std_dev[0:3] = max_std_pos
+
+    # 3. Find the max sigma for Velocity (cols 5,6,7)
+    max_std_vel = std_dev[5:8].max()
+    # Apply to all velocity columns
+    std_dev[5:8] = max_std_vel
+
+    # Now std_dev has the SAME scaling factor for x, y, z
+    mean_b = mean.view(1, 1, -1)
+    std_b = std_dev.view(1, 1, -1)
 
     NODE_TYPE_START = 3
     NODE_TYPE_END = 5
