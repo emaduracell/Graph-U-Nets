@@ -11,8 +11,8 @@ from model_entire import GraphUNet_DefPlate
 from plots import make_final_plots
 from torch.optim.lr_scheduler import ExponentialLR
 
-# BOUNDARY_NODE = torch.Tensor([0., 1.])
-# NORMAL_NODE = torch.Tensor([0., 0.])
+#BOUNDARY_NODE = torch.Tensor([0., 1.])
+#NORMAL_NODE = torch.Tensor([0., 0.])
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
 VELOCITY_INDEXES = slice(5, 8)     # like 5:8
@@ -174,7 +174,7 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
 
     model.eval()
     with torch.no_grad():
-        for i, (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids) \
+        for i, (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types,dynamic_edges, traj_ids, time_ids) \
                 in enumerate(test_loader):
             print(f"[run_final_evaluation] index trajectory = {traj_ids}, time = {time_ids}")
             gs = [A.to(device) for A in adj_mat_list]
@@ -336,7 +336,7 @@ def train_gnet_ema(device):
 
         print(f"\nOverfitting on trajectory {overfit_traj_id} with {len(overfit_indices)} time steps")
         overfit_batch = next(iter(train_loader))
-        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_indices) \
+        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu,dyn_edges, traj_ids, time_indices) \
             = overfit_batch
         print("Overfitting on the following (traj_id, time_idx) pairs:")
         for i, (tr, ti) in enumerate(zip(traj_ids, time_indices)):
@@ -386,7 +386,7 @@ def train_gnet_ema(device):
         epoch_grad_norm = 0.0
         num_batches = 0
 
-        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_ids\
+        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, dynamic_edges, traj_ids, time_ids\
                 in train_loader:
             adj_mat_list = [A.to(device) for A in adj_mat_list]
             feat_t_mat_list = [X_t.to(device) for X_t in feat_t_mat_list]
@@ -432,7 +432,7 @@ def train_gnet_ema(device):
         total_test_count = 0
 
         with torch.no_grad():
-            for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids \
+            for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types,dynamic_edges, traj_ids, time_ids \
                     in test_loader:
                 adj_mat_cpu_list = [A.to(device) for A in adj_mat_list]
                 feat_mat_cpu_list = [X_t.to(device) for X_t in feat_t_mat_list]

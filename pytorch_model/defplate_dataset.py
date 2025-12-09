@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 
-def create_dynamic_adjacency_on_the_fly(base_A, node_types, pos_t, k=2):
+def create_dynamic_adjacency_on_the_fly(base_A, node_types, pos_t, k=1):
     """
     Computes A_t dynamically.
     For each Sphere node, it looks at its k-nearest neighbors in the *entire* graph.
@@ -9,7 +9,7 @@ def create_dynamic_adjacency_on_the_fly(base_A, node_types, pos_t, k=2):
     If a neighbor is another Sphere node, it ignores it (assumed already handled or irrelevant).
     """
     A_t = base_A.clone() 
-    
+    dynamic_edge_list = []
     # 1. Identify Sphere indices
     sphere_indices = torch.nonzero(node_types == 1, as_tuple=True)[0]
     
@@ -49,13 +49,21 @@ def create_dynamic_adjacency_on_the_fly(base_A, node_types, pos_t, k=2):
                     A_t[nb_global_idx, sphere_global_idx] = 1.0
                 
                 # If neighbor is Sphere (1), we do nothing (don't add extra edges between sphere nodes)
+                dynamic_edge_list.append([sphere_global_idx.item(), nb_global_idx.item()])
 
     # Normalize
     row_sums = A_t.sum(dim=1, keepdim=True)
     row_sums[row_sums == 0] = 1.0
     A_norm = A_t / row_sums
+    # Process Edge List for return
+    if len(dynamic_edge_list) > 0:
+        # Transpose to [2, E] for easy plotting (row 0 = source, row 1 = target)
+        dynamic_edges = torch.tensor(dynamic_edge_list, dtype=torch.long).t()
+    else:
+        # Return empty tensor if no edges found
+        dynamic_edges = torch.empty((2, 0), dtype=torch.long)
     
-    return A_norm
+    return A_norm , dynamic_edges
 
 class DefPlateDataset(Dataset):
     def __init__(self, list_of_trajs):
@@ -109,7 +117,7 @@ class DefPlateDataset(Dataset):
         pos_t = X_t[:, :3]
         
         # This function adds edges between the ball and the plate based on proximity
-        A_dynamic = create_dynamic_adjacency_on_the_fly(
+        A_dynamic, dynamic_edges = create_dynamic_adjacency_on_the_fly(
             base_A=base_A, 
             node_types=node_types, 
             pos_t=pos_t
@@ -123,6 +131,7 @@ class DefPlateDataset(Dataset):
             traj["std"],
             traj["cells"],
             node_types,
+            dynamic_edges,
             traj_id,
             t
         )
@@ -136,12 +145,13 @@ def collate_unet(batch):
     X_tp1_list = []
     mean_list = []
     std_list = []
+    dynamic_edges_list = []
     cells_list = []
     node_types_list = []
     traj_id_list = []
     time_idx_list = []
 
-    for A, X_t, X_tp1, mean, std, cells, node_type, traj_id, time_idx in batch:
+    for A, X_t, X_tp1, mean, std, cells, node_type,dyn_edges, traj_id, time_idx in batch:
         adjacency_mat_list.append(A)
         X_t_list.append(X_t)
         X_tp1_list.append(X_tp1)
@@ -151,6 +161,7 @@ def collate_unet(batch):
         node_types_list.append(node_type)
         traj_id_list.append(traj_id)
         time_idx_list.append(time_idx)
+        dynamic_edges_list.append(dyn_edges)
 
     return (
         adjacency_mat_list, 
@@ -160,6 +171,7 @@ def collate_unet(batch):
         std_list, 
         cells_list, 
         node_types_list, 
+        dynamic_edges_list,
         traj_id_list,
         time_idx_list
     )

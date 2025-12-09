@@ -4,9 +4,34 @@ import yaml
 import os
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-
-from data_loader import load_all_trajectories
+from defplate_dataset import create_dynamic_adjacency_on_the_fly
+#from data_loader import load_all_trajectories
 from model_entire import GraphUNet_DefPlate
+
+'''FOR VISUALIZATION OF DYNAMIC EDGES  '''
+def make_dynamic_edges_trace(coords, edge_index):
+    """
+    Creates Red Lines for the dynamic interactions between Sphere and Plate.
+    """
+    if edge_index is None or edge_index.shape[1] == 0:
+        return go.Scatter3d() # Empty trace
+
+    src = edge_index[0].cpu().numpy()
+    dst = edge_index[1].cpu().numpy()
+    
+    x_lines, y_lines, z_lines = [], [], []
+    for s, d in zip(src, dst):
+        x_lines.extend([coords[s,0], coords[d,0], None])
+        y_lines.extend([coords[s,1], coords[d,1], None])
+        z_lines.extend([coords[s,2], coords[d,2], None])
+
+    return go.Scatter3d(
+        x=x_lines, y=y_lines, z=z_lines,
+        mode='lines',
+        line=dict(color='red', width=4), # Thick red lines
+        name='Interaction'
+    )
+'''END FOR VISUALIZATION OF DYNAMIC EDGES  '''
 
 # Data paths
 TFRECORD_PATH = "data/train.tfrecord"
@@ -24,9 +49,9 @@ STRESS_INDEXES = slice(8, 9)  # like 8:9
 
 # Visualization settings  [374,356,302,387] overfit_traj_id: 2
 TRAJ_INDEX = 0
-T_STEP = 0  # time index t (visualize t -> t+1)
+T_STEP = 302  # time index t (visualize t -> t+1)
 ROLLOUT = True  # if True, run multi-step rollout
-ROLLOUT_STEPS = 100  # maximum number of rollout steps for multi-step visualization
+ROLLOUT_STEPS = 30  # maximum number of rollout steps for multi-step visualization
 RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
 
 
@@ -79,7 +104,7 @@ def load_config(config_path):
 
 
 def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, node_type_true, node_type_pred, title_true,
-                        title_pred, color_mode):
+                        title_pred, color_mode,dynamic_edges=None):
     """
     Visualizzazione mesh + heatmap stress o node_type.
     """
@@ -215,7 +240,11 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
                        np.array(tri_i), np.array(tri_j), np.array(tri_k)),
         row=1, col=2
     )
-
+    if dynamic_edges is not None:
+        fig.add_trace(
+            make_dynamic_edges_trace(pos_pred, dynamic_edges),
+            row=1, col=2
+        )
     # ======================================================
     # 5) SETTINGS
     # ======================================================
@@ -326,13 +355,19 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
     stress_pred_list = []
     node_type_pred_list = []
     rollout_error_list = []
+    base_A = A.clone() # Keep the static mesh safe
+    dynamic_edges_list = [] # Store edges for viz
     for k in range(steps):
+        A_dynamic, dyn_edges = create_dynamic_adjacency_on_the_fly(
+            base_A, node_type, p_hat, k=5
+        )
+        dynamic_edges_list.append(dyn_edges)
         # ======================================================
         # 1) Predict NORMALIZED velocity + stress
         #    v_hat_k, sigma_hat_k from graph at time "k"
         # ======================================================
         with torch.no_grad():
-            pred = model.rollout_step(A, current_norm)  # [N,4] normalized
+            pred = model.rollout_step(A_dynamic, current_norm)  # [N,4] normalized
 
         vel_norm = pred[:, :3]  # [N,3]
         stress_norm = pred[:, 3].unsqueeze(-1)  # [N,1]
@@ -404,7 +439,7 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
         # Advance p_hat_k -> p_hat_{k+1}
         p_hat = p_hat_next
 
-    return coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list
+    return coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list, dynamic_edges_list
 
 
 # MAIN VISUALIZATION LOGIC
@@ -495,7 +530,7 @@ def main():
     stress_true = stress_true.cpu().numpy().squeeze(-1)
 
     # Use rollout with 1 step to integrate predicted velocities
-    coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list = rollout(
+    coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list,dynamic_edges_list = rollout(
         model=model,
         A=A,
         X_seq_norm=X_seq_norm,
@@ -541,7 +576,7 @@ def main():
     steps = min(ROLLOUT_STEPS, T - 1 - t)
     print(f"\nPerforming {steps}-step rollout...")
 
-    coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list = rollout(
+    coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list, dynamic_edges_list = rollout(
         model=model,
         A=A,
         X_seq_norm=X_seq_norm,
@@ -581,7 +616,7 @@ def main():
         visualize_mesh_pair(pos_true=coords_true, pos_pred=coords_pred, stress_true=stress_true,
                             stress_pred=stress_pred, node_type_true=node_type_true, node_type_pred=node_type_pred,
                             cells=cells_filtered, color_mode="stress", title_true=f"Ground Truth t={t + 1 + k}",
-                            title_pred=f"Prediction t={t + 1 + k}")
+                            title_pred=f"Prediction t={t + 1 + k}", dynamic_edges=dynamic_edges_list[k])
 
     # ======================================================
     # PLOT ROLLOUT ERROR
