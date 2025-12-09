@@ -177,8 +177,8 @@ def run_final_evaluation(model, test_loader, device, train_losses, val_losses, t
 
     model.eval()
     with torch.no_grad():
-        for i, (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids) \
-                in enumerate(test_loader):
+        for i, (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, dyn_edges,
+                traj_ids, time_ids) in enumerate(test_loader):
             print(f"[run_final_evaluation] index trajectory = {traj_ids}, time = {time_ids}")
             gs = [A.to(device) for A in adj_mat_list]
             hs = [X_t.to(device) for X_t in feat_t_mat_list]
@@ -339,8 +339,8 @@ def train_gnet_ema(device):
 
         print(f"\nOverfitting on trajectory {overfit_traj_id} with {len(overfit_indices)} time steps")
         overfit_batch = next(iter(train_loader))
-        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_indices) \
-            = overfit_batch
+        (adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, dyn_edges, traj_ids,
+         time_indices) = overfit_batch
         print("Overfitting on the following (traj_id, time_idx) pairs:")
         for i, (tr, ti) in enumerate(zip(traj_ids, time_indices)):
             print(f"  sample {i:02d}: traj_id={int(tr)}, t={int(ti)}")
@@ -390,8 +390,8 @@ def train_gnet_ema(device):
         epoch_grad_norm = 0.0
         num_batches = 0
 
-        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, traj_ids, time_ids\
-                in train_loader:
+        for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types_cpu, dyn_edges, traj_ids \
+                , time_ids in train_loader:
             adj_mat_list = [A.to(device) for A in adj_mat_list]
             feat_t_mat_list = [X_t.to(device) for X_t in feat_t_mat_list]
             feat_tp1_mat_list = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
@@ -435,9 +435,9 @@ def train_gnet_ema(device):
         total_test_mae = 0.0
         total_test_count = 0
 
-        with torch.no_grad():
-            for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, traj_ids, time_ids \
-                    in test_loader:
+        with ((torch.no_grad())):
+            for adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, cells, node_types, dynamic_edges, \
+                traj_ids, time_ids in test_loader:
                 adj_mat_cpu_list = [A.to(device) for A in adj_mat_list]
                 feat_mat_cpu_list = [X_t.to(device) for X_t in feat_t_mat_list]
                 feat_mat_cpu_list_tp1 = [X_tp1.to(device) for X_tp1 in feat_tp1_mat_list]
@@ -483,9 +483,15 @@ def train_gnet_ema(device):
 
     end_time = time.time(); total_time = end_time - start_time; hours = int(total_time // 3600)
     minutes = int((total_time % 3600) // 60); seconds = int(total_time % 60);
-    time_str = f"Total training time: {hours}h {minutes}m {seconds}s"; print(f"\n{time_str}")
+    time_str = f"[train] Total training time: {hours}h {minutes}m {seconds}s"; print(f"\n{time_str}")
 
-    print(f"\nSaving model to {CHECKPOINT_PATH}")
+    if DefPlateDataset.total_comp_calls > 0:
+        avg_edge_time = DefPlateDataset.total_comp_time / DefPlateDataset.total_comp_calls
+        print(f"\n[train] Average 'add_edges' computation time: {avg_edge_time:.6f} seconds per graph")
+    else:
+        print("[train] No edges added.")
+
+    print(f"\n[train] Saving model to {CHECKPOINT_PATH}")
     torch.save(model.state_dict(), CHECKPOINT_PATH)
     # Final plots
     run_final_evaluation(model, test_loader, device, train_losses, val_losses, train_maes, val_maes, grad_norms,
