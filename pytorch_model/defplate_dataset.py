@@ -1,68 +1,76 @@
 import torch
 from torch.utils.data import Dataset
+import torch
 
-def create_dynamic_adjacency_on_the_fly(base_A, node_types, pos_t, k=1):
+def create_dynamic_adjacency_on_the_fly(base_A, node_types, pos_t, k=25):
     """
-    Computes A_t dynamically.
+        Computes A_t dynamically.
     For each Sphere node, it looks at its k-nearest neighbors in the *entire* graph.
     If a neighbor is a Plate node (Normal or Boundary), it adds an edge.
     If a neighbor is another Sphere node, it ignores it (assumed already handled or irrelevant).
+    Vectorized version: No Python loops.
     """
-    A_t = base_A.clone() 
-    dynamic_edge_list = []
+    A_t = base_A.clone()
+    
     # 1. Identify Sphere indices
     sphere_indices = torch.nonzero(node_types == 1, as_tuple=True)[0]
     
-    # We need to look at ALL nodes for neighbors, so we use pos_t for everyone.
-    # To save time, we compute distance from Sphere Nodes -> All Nodes.
-    
     if len(sphere_indices) > 0:
         sphere_pos = pos_t[sphere_indices]
-        all_pos = pos_t
         
-        # Compute distances: [N_sphere, N_total]
-        dists = torch.cdist(sphere_pos, all_pos)
+        # 2. Compute Distances & TopK (Vectorized)
+        # Shape: [N_sphere, N_total]
+        dists = torch.cdist(sphere_pos, pos_t)
         
-        # Find k+1 nearest neighbors (including itself, so we take k+1 and skip index 0 later)
-        # actually, just taking k is fine if we check identity, but let's take k+1 to be safe
-        k_val = min(k + 1, len(all_pos))
+        # Get k+1 neighbors (to safely account for self-loops)
+        k_val = min(k + 1, len(pos_t))
         _, neighbor_indices = torch.topk(dists, k=k_val, dim=1, largest=False)
+        # neighbor_indices shape: [N_sphere, k_val]
         
-        # neighbor_indices is [N_sphere, k+1] containing global indices of neighbors
+        # 3. Filter Valid Neighbors (Vectorized)
         
-        # Iterate over sphere nodes and their found neighbors
-        for i, sphere_global_idx in enumerate(sphere_indices):
-            # Get the global indices of the k nearest neighbors for this sphere node
-            global_neighbors = neighbor_indices[i]
-            
-            for nb_global_idx in global_neighbors:
-                # 1. Skip self-loops (if dist was 0)
-                if nb_global_idx == sphere_global_idx:
-                    continue
-                
-                # 2. Check the TYPE of the neighbor
-                nb_type = node_types[nb_global_idx]
-                
-                # If neighbor is Plate (0) or Boundary (3), add connection
-                if nb_type == 0 or nb_type == 3:
-                    A_t[sphere_global_idx, nb_global_idx] = 1.0
-                    A_t[nb_global_idx, sphere_global_idx] = 1.0
-                    # If neighbor is Sphere (1), we do nothing (don't add extra edges between sphere nodes)
-                    dynamic_edge_list.append([sphere_global_idx.item(), nb_global_idx.item()])
+        # Get types of all neighbors at once
+        # Shape: [N_sphere, k_val]
+        nb_types = node_types[neighbor_indices] 
+        
+        # Create a boolean mask for valid connections:
+        # Condition A: Neighbor must be Plate (0) or Boundary (3)
+        type_mask = (nb_types == 0) | (nb_types == 3)
+        
+        # Condition B: Neighbor must not be self 
+        # (Compare neighbor index to sphere index broadcasted)
+        # sphere_indices shape: [N_sphere] -> [N_sphere, 1]
+        self_mask = neighbor_indices != sphere_indices.unsqueeze(1)
+        
+        # Combine masks
+        valid_mask = type_mask & self_mask
+        
+        # 4. Apply updates to A_t
+        # Extract source indices (spheres) and target indices (neighbors) where mask is True
+        source_idxs = sphere_indices.unsqueeze(1).expand_as(neighbor_indices)[valid_mask]
+        target_idxs = neighbor_indices[valid_mask]
+        
+        # Batch update the adjacency matrix
+        # Note: We use indices directly rather than looping
+        A_t.index_put_((source_idxs, target_idxs), torch.tensor(1.0, device=A_t.device))
+        A_t.index_put_((target_idxs, source_idxs), torch.tensor(1.0, device=A_t.device))
+        
+        # Create edge list for return
+        if len(source_idxs) > 0:
+            dynamic_edges = torch.stack([source_idxs, target_idxs], dim=0)
+        else:
+            dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=A_t.device)
 
-    # Normalize
+    else:
+        dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=A_t.device)
+
+    # 5. Normalize (Vectorized)
     row_sums = A_t.sum(dim=1, keepdim=True)
     row_sums[row_sums == 0] = 1.0
     A_norm = A_t / row_sums
-    # Process Edge List for return
-    if len(dynamic_edge_list) > 0:
-        # Transpose to [2, E] for easy plotting (row 0 = source, row 1 = target)
-        dynamic_edges = torch.tensor(dynamic_edge_list, dtype=torch.long).t()
-    else:
-        # Return empty tensor if no edges found
-        dynamic_edges = torch.empty((2, 0), dtype=torch.long)
     
-    return A_norm , dynamic_edges
+    return A_norm, dynamic_edges
+
 
 class DefPlateDataset(Dataset):
     def __init__(self, list_of_trajs):
