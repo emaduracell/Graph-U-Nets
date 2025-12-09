@@ -158,7 +158,7 @@ class GraphUNet_DefPlate(nn.Module):
         :returns y_pred: [N, F_out]
             predicted node features at t+1
         """
-        # Normalize adjacency
+        # Normalize adjacency TODO UNDERSTAND IF IT'S REMOVABLE
         g = norm_g(g)  # [N, N]
         # Initial GCN
         h0 = self.start_gcn(g, h)  # [N, l_dim]

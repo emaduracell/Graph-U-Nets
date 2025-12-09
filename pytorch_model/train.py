@@ -10,6 +10,7 @@ from defplate_dataset import DefPlateDataset, collate_unet
 from model_entire import GraphUNet_DefPlate
 from plots import make_final_plots
 from torch.optim.lr_scheduler import ExponentialLR
+import time
 
 # BOUNDARY_NODE = torch.Tensor([0., 1.])
 # NORMAL_NODE = torch.Tensor([0., 0.])
@@ -17,6 +18,10 @@ BOUNDARY_NODE = 3
 NORMAL_NODE = 0
 VELOCITY_INDEXES = slice(5, 8)     # like 5:8
 STRESS_INDEXES = slice(8, 9)     # like 8:9
+# HARDCODED DATASET AND OUTPUT PATHS
+PREPROCESSED_DATA_PATH = "data/preprocessed_train.pt"
+CHECKPOINT_PATH = "gnet_ema_multi.pt"
+PLOTS_DIR = os.path.join(os.path.dirname(__file__), "plots")
 
 def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
     """
@@ -52,10 +57,10 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
         pred_stress = pred[:, 3:4]
         # Loss per graph
         loss_graph = 0.0
-        weight_stress = torch.count_nonzero(stress_mask) / (torch.count_nonzero(stress_mask) + \
-                                                            torch.count_nonzero(vel_mask))
-        weight_vel = torch.count_nonzero(vel_mask) / (torch.count_nonzero(stress_mask) + \
-                                                            torch.count_nonzero(vel_mask))
+        # weight_stress = torch.count_nonzero(stress_mask) / (torch.count_nonzero(stress_mask) + torch.count_nonzero(vel_mask))
+        weight_stress = 1
+        # weight_vel = torch.count_nonzero(vel_mask) / (torch.count_nonzero(stress_mask) + torch.count_nonzero(vel_mask))
+        weight_vel = 1
         # print(f"type(vel_mask) = {type(vel_mask)} \t shape(vel_mask) = {vel_mask.shape} \t weight_vel = {weight_vel} "
         #       f"\t {pred_vel[vel_mask].shape}")
         # print(f"type(stress_mask) = {type(stress_mask)} \t shape(stress_mask) = {stress_mask.shape} weight_stress = "
@@ -63,12 +68,14 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
         # print(f"boundaries = {(nodetype == BOUNDARY_NODE).any()}")
 
         if vel_mask.any():
-            vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
+            # vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
+            vel_loss = F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])
             weighted_vel_loss = vel_loss * weight_vel
             loss_graph = loss_graph + weighted_vel_loss
             total_vel_loss = total_vel_loss + weighted_vel_loss
             # print(f"\t \t Velocity loss = {F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])}")
         if stress_mask.any():
+            # stress_loss = F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])
             stress_loss = F.huber_loss(pred_stress[stress_mask], target_stress[stress_mask])
             weighted_stress_loss = weight_stress * stress_loss
             loss_graph = loss_graph + weighted_stress_loss
@@ -81,11 +88,6 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
     vel_loss_batch_avgd = total_vel_loss / num_graphs
     stress_loss_batch_avgd = total_stress_loss / num_graphs
     return loss_batch_avgd, vel_loss_batch_avgd, stress_loss_batch_avgd
-
-# HARDCODED DATASET AND OUTPUT PATHS
-PREPROCESSED_DATA_PATH = "data/preprocessed_train.pt"
-CHECKPOINT_PATH = "gnet_ema_multi.pt"
-PLOTS_DIR = os.path.join(os.path.dirname(__file__), "plots")
 
 
 def load_config(config_path):
@@ -101,6 +103,7 @@ def get_grad_norm(model):
 
     :param model:
         model object
+
     :return: total norm of current batch
     """
     total_norm = 0
@@ -372,6 +375,7 @@ def train_gnet_ema(device):
     test_stress_losses = []
     val_maes = []
     grad_norms = []
+    start_time = time.time()
 
     for epoch in range(train_cfg['epochs']):
 
@@ -407,8 +411,8 @@ def train_gnet_ema(device):
             optimizer.step()
             # Accumulate loss (item for extracting float from 0-dim tensor)
             total_train_loss += batch_loss.item()
-            total_train_vel_loss += vel_loss_batch_avgd
-            total_train_stress_loss += stress_loss_batch_avgd
+            total_train_vel_loss += vel_loss_batch_avgd.item()
+            total_train_stress_loss += stress_loss_batch_avgd.item()
             # Compute MAE
             mae, count = compute_batch_metrics(preds_list, feat_tp1_mat_list, node_types_cpu)
             total_train_mae += mae
@@ -476,6 +480,10 @@ def train_gnet_ema(device):
         print(f"[Train] [Epoch = {epoch:03d}]  Train Loss: {avg_train:.6f} (MAE: {avg_train_mae:.6f}) |  Test Loss: "
               f"{avg_test:.6f} (MAE: {avg_test_mae:.6f}) | Velocity loss = "
               f"{avg_train_vel_loss:.6f} | Stress loss = {avg_train_stress_loss:.6f} | Lr = {current_lr:.6f} ")
+
+    end_time = time.time(); total_time = end_time - start_time; hours = int(total_time // 3600)
+    minutes = int((total_time % 3600) // 60); seconds = int(total_time % 60);
+    time_str = f"Total training time: {hours}h {minutes}m {seconds}s"; print(f"\n{time_str}")
 
     print(f"\nSaving model to {CHECKPOINT_PATH}")
     torch.save(model.state_dict(), CHECKPOINT_PATH)

@@ -114,4 +114,4 @@ checkpoints/
 /paper/data/
 
 .idea
-pytorch_model/data
+pytorch_model/data_new

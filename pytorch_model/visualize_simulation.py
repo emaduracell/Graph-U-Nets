@@ -14,8 +14,8 @@ META_PATH = "data/meta.json"
 # Prefer the preprocessed dataset to mirror training
 PREPROCESSED_PATH = "data/preprocessed_train.pt"
 OUTPUT_DIR = "simulation_rollout"
-# CHECKPOINT_PATH = "gnet_ema_multi.pt"
-CHECKPOINT_PATH = "plots_lr=1e-4_gamma=0.995/gnet_ema_multi.pt"
+CHECKPOINT_PATH = "gnet_ema_multi.pt"
+# CHECKPOINT_PATH = "plots_lr=1e-4_gamma=0.995/gnet_ema_multi.pt"
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
 SPHERE_NODE = 1

@@ -300,6 +300,7 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
 
     std_dev = torch.sqrt(std_acc / (element_num - 1))
 
+    # TODO NORMALIZING ALL THREE COMPONENTS IN AN EQUIVALENT WAY
     max_std_pos = std_dev[0:3].max()
     std_dev[0:3] = max_std_pos
     max_std_vel = std_dev[5:8].max()

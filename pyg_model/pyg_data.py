@@ -10,10 +10,6 @@ from torch_geometric.utils import coalesce, to_undirected
 from tfrecord.torch.dataset import TFRecordDataset
 
 # Feature layout (per node):
-# [0:3] world_pos (x, y, z)
-# [3:5] node_type one-hot (normal, boundary/sphere)
-# [5:8] velocity (vx, vy, vz)
-# [8]   stress
 FEATURE_DIM = 9
 TARGET_DIM = 4  # velocity (3) + stress (1)
 NODE_TYPE_START = 3
