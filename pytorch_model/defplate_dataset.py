@@ -47,9 +47,8 @@ def create_dynamic_adjacency_on_the_fly(base_A, node_types, pos_t, k=1):
                 if nb_type == 0 or nb_type == 3:
                     A_t[sphere_global_idx, nb_global_idx] = 1.0
                     A_t[nb_global_idx, sphere_global_idx] = 1.0
-                
-                # If neighbor is Sphere (1), we do nothing (don't add extra edges between sphere nodes)
-                dynamic_edge_list.append([sphere_global_idx.item(), nb_global_idx.item()])
+                    # If neighbor is Sphere (1), we do nothing (don't add extra edges between sphere nodes)
+                    dynamic_edge_list.append([sphere_global_idx.item(), nb_global_idx.item()])
 
     # Normalize
     row_sums = A_t.sum(dim=1, keepdim=True)

@@ -293,6 +293,14 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         # print(f"Loaded trajectory {traj_idx}")
 
     mean = sum_elements / element_num
+
+
+    shared_mean_pos = mean[0:3].mean() 
+    mean[0:3] = shared_mean_pos
+
+    # Velocity (cols 5,6,7)
+    shared_mean_vel = mean[5:8].mean() 
+    mean[5:8] = shared_mean_vel
     std_acc = torch.zeros_like(mean)
     for traj in list_of_trajs:
         X = traj['X_seq_norm']
