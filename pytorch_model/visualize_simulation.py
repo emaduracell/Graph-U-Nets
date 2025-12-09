@@ -23,9 +23,9 @@ STRESS_INDEXES = slice(8, 9)  # like 8:9
 
 # Visualization settings  [374,356,302,387] overfit_traj_id: 2
 TRAJ_INDEX = 0
-T_STEP = 0  # time index t (visualize t -> t+1)
-ROLLOUT = True  # if True, run multi-step rollout
-ROLLOUT_STEPS = 100  # maximum number of rollout steps for multi-step visualization
+T_STEP = 30  # time index t (visualize t -> t+1)
+ROLLOUT = False  # if True, run multi-step rollout
+ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
 RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
 
 
@@ -233,7 +233,7 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
     # 2. The Wireframe
     fig.add_trace(make_wireframe(pos_pred[:, 0], pos_pred[:, 1], pos_pred[:, 2],
                                  np.array(tri_i), np.array(tri_j), np.array(tri_k)), row=1, col=2)
-    print(f"dynamic_edges={dynamic_edges}")
+    # print(f"dynamic_edges={dynamic_edges}")
     if dynamic_edges is not None:
         fig.add_trace(make_dynamic_edges_trace(pos_pred, dynamic_edges), row=1, col=2)
     # ======================================================
@@ -350,6 +350,7 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
     dynamic_edges_list = [] # Store edges for viz
     for k in range(steps):
         A_dynamic, dyn_edges = add_edges(base_A, node_type, p_hat, k=5)
+        print(f"dyn_edges={dyn_edges}")
         dynamic_edges_list.append(dyn_edges)
         # ======================================================
         # 1) Predict NORMALIZED velocity + stress

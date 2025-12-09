@@ -9,7 +9,7 @@ OUTPUT_DIR = "data"
 MAX_TRAJS = None  # Set to None to load all trajectories, or specify a number
 
 
-def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs=None):
+def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs):
     """
     Load trajectories from TFRecord, preprocess them, and save to disk.
     
