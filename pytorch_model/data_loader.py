@@ -300,6 +300,11 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
 
     std_dev = torch.sqrt(std_acc / (element_num - 1))
 
+    max_std_pos = std_dev[0:3].max()
+    std_dev[0:3] = max_std_pos
+    max_std_vel = std_dev[5:8].max()
+    std_dev[5:8] = max_std_vel
+
     NODE_TYPE_START = 3
     NODE_TYPE_END = 5
     mean[NODE_TYPE_START:NODE_TYPE_END] = 0.0
@@ -307,6 +312,7 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
 
     mean_b = mean.view(1, 1, -1)
     std_b = std_dev.view(1, 1, -1)
+
     for traj in list_of_trajs:
         traj['mean'] = mean_b
         traj['std'] = std_b
