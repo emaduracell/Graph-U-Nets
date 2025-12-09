@@ -31,7 +31,9 @@ def _build_description(meta: Dict) -> Dict[str, str]:
 
 
 def _decode_record(rec_bytes: Dict[str, bytes], meta: Dict) -> Dict[str, np.ndarray]:
-    """Decode a TFRecord example into numpy arrays following meta specs."""
+    """
+    Decode a TFRecord example into numpy arrays following meta specs.
+    """
     out = {}
     for k, v in rec_bytes.items():
         dtype = meta["features"][k]["dtype"]

@@ -35,17 +35,8 @@ def _flatten_dict(d, parent_key=""):
     return dict(items)
 
 
-def make_final_plots(
-    save_dir,
-    train_losses,
-    val_losses,
-    train_vel_losses,
-    train_stress_losses,
-    val_vel_losses,
-    val_stress_losses,
-    predictions,
-    targets,
-):
+def make_final_plots(save_dir, train_losses, val_losses, train_vel_losses, train_stress_losses, val_vel_losses,
+                     val_stress_losses, predictions, targets):
     """
     Generate loss curves and predicted-vs-true / residual plots.
     """

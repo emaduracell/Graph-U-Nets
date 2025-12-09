@@ -5,8 +5,8 @@ from torch_geometric.loader import DataLoader
 
 import torch.nn.functional as F
 
-from pyg_graph_unet_data import GraphUNetTFRecordDataset
-from pyg_graph_unet_model import GraphUNetDefPlatePyG
+from pyg_data import GraphUNetTFRecordDataset
+from pyg_model import GraphUNetDefPlatePyG
 from pyg_plots import make_final_plots
 
 
