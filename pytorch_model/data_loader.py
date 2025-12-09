@@ -313,8 +313,6 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
     std_dev[5:8] = max_std_vel
 
     # Now std_dev has the SAME scaling factor for x, y, z
-    mean_b = mean.view(1, 1, -1)
-    std_b = std_dev.view(1, 1, -1)
 
     NODE_TYPE_START = 3
     NODE_TYPE_END = 5
