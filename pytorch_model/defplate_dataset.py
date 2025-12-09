@@ -85,8 +85,7 @@ class DefPlateDataset(Dataset):
         Construct a dataset from a list of trajectories objects.
 
         :param list_of_trajs: List
-            a list where each item is a dictionary containing:
-            "A", "X_seq_norm", "mean", "std", "cells", "node_type"
+            a list where each item has (A, X_seq_norm, mean, std, cells, node_type)
         """
         self.samples = []
         # Store the list of trajectories
@@ -104,7 +103,7 @@ class DefPlateDataset(Dataset):
                 })
 
     def __len__(self):
-        """Returns the total number of samples (time steps across all trajs)"""
+        """Returns the number of samples (trajectories)"""
         return len(self.samples)
 
     def __getitem__(self, idx):
@@ -143,7 +142,12 @@ class DefPlateDataset(Dataset):
 
 def collate_unet(batch):
     """
-    Custom collate function to batch the data as lists of tensors.
+    Given a batch, we return a tuple of lists of the components of the tuple instead.
+
+    :param batch: List
+        a list of tuples (A, X_t, X_tp1, mean, std, cells, node_type, traj_id)
+
+    :return (A_list, X_t_list, X_tp1_list, mean_list, std_list, cells_list, node_type_list, traj_id_list).
     """
     adjacency_mat_list = []
     X_t_list = []
