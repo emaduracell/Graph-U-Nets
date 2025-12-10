@@ -11,7 +11,7 @@ model:
 # Training parameters TODO add loss as a hyperparameter
 training:
   lr: 0.0001 # default = 1e-4 good value 0.001
-  epochs: 500
+  epochs: 1000
   batch_size: 8
   shuffle: False # False for overfitting?
   adam_weight_decay: 0 # default: 1e-4 | overfit = 0
@@ -21,8 +21,8 @@ training:
   random_seed: 42 # Seed for train/test split and any random operations
   overfit_traj_id: 0 # For overfit mode: which trajectory to use (null = use first available)
   overfit_time_idx: [0,1,2,3,4,5,6,7] # For overfit mode: which time step t to use (null = use all time steps from trajectory) [13, 202, 302, 10, 11, 90, 321, 43]
-  add_world_edges: "radius" # 'neighbours' or 'radius' or 'None'
-  datapath: "data_centroid_False/preprocessed_train.pt"
+  add_world_edges: "None" # 'neighbours' or 'radius' or 'None'
+  datapath: "data_standard_False/preprocessed_train.pt"
   radius_world_edge: 0.03
   k_neighb: 1
   model_path: "model_out/"

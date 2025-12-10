@@ -123,7 +123,7 @@ def print_dataset_statistics(metadata_path, world_pos_idxs, vel_idxs, stress_idx
     print(f"{'Stress (Von Mises)':<20} | {fmt(s_mean):<25} | {fmt(s_std):<25}")
 
     print("-" * 60)
-    print("Note: If normalization_method='physics', positions and velocities are centered per-frame.")
+    print("Note: If normalization_method='centroid', positions and velocities are centered per-frame.")
     print("The statistics above represent the global normalization scaling factors.")
     print("=" * 60 + "\n")
 
