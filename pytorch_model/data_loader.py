@@ -13,6 +13,9 @@ VELOCITY_INDEXES = slice(8, 11)
 STRESS_INDEXES = slice(11, 12)
 MESH_POS_INDEXES = slice(0, 3)
 VELOCITY_MEAN = 0.0
+TFRECORD_PATH = "data/train.tfrecord"
+META_PATH = "data/meta.json"
+NUM_TRAIN_TRAJS = 1500  # Load only the first K trajectories
 
 def _cast_to_bytes(value):
     """
@@ -210,6 +213,7 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         stress = traj["stress"]  # (T,N,1)
         node_type = traj["node_type"]  # (N,1)
         mesh_cells = traj["cells"]  # (C,4)
+        mesh_pos = traj["mesh_pos"]
         if idx == 0 or idx == 1 or idx == 2:
             print(f"traj: \n \t type(traj) = {type(traj)}, len={len(traj)}")
             print(f"world pos: \n"
@@ -270,6 +274,7 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
 
             feats_t = np.concatenate([centered_mesh_pos, centered_world_pos, node_type_floatcast, vel[t], stress[t]], axis=-1)
             feats_list.append(feats_t)
+
         X_seq = torch.tensor(np.stack(feats_list, axis=0), dtype=torch.float32)
         # print(f"X_seq.shape={X_seq.shape}")
 
@@ -340,7 +345,7 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
     # 4. Isotropic scaling for Velocity
     # max_std_vel = std_dev[VELOCITY_INDEXES].max()
     # std_dev[VELOCITY_INDEXES] = max_std_vel
-    vel_variances = std_dev[VELOCITY_INDEXES] # Shape [3]
+    vel_variances = accumulated_variance[VELOCITY_INDEXES] # Shape [3]
     # Sum of squared errors for all 3 components / (Total Elements * 3)
     # Note: element_num is N*T. The total count for 3 components is element_num * 3
     vel_rms = torch.sqrt(vel_variances.sum() / ((element_num - 1) * 3))
@@ -372,7 +377,4 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
 
 
 if __name__ == "__main__":
-    TFRECORD_PATH = "data/train.tfrecord"
-    META_PATH = "data/meta.json"
-    NUM_TRAIN_TRAJS = 1500  # Load only the first K trajectories
     list_of_trajs = load_all_trajectories(TFRECORD_PATH, META_PATH, NUM_TRAIN_TRAJS)

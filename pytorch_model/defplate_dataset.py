@@ -6,6 +6,7 @@ BOUNDARY_NODE = 3
 NORMAL_NODE = 0
 SPHERE_NODE = 1
 MESH_POS_INDEXES = slice(3, 6)  # like 3:6
+RADIUS_WORLD_EDGE = 0.03
 
 def add_edges(base_A, node_types, pos_t, radius):
     """
@@ -107,7 +108,7 @@ class DefPlateDataset(Dataset):
         pos_t = X_t[:, MESH_POS_INDEXES]
 
         # This function adds edges between the ball and the plate based on proximity
-        A_dynamic, dynamic_edges = add_edges(base_A=base_A, node_types=node_types, pos_t=pos_t)
+        A_dynamic, dynamic_edges = add_edges(base_A=base_A, node_types=node_types, pos_t=pos_t, radius=RADIUS_WORLD_EDGE)
         time_end = time.time()
         self.total_comp_time += time_start - time_end
         self.total_comp_calls += 1

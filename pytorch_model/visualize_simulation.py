@@ -23,7 +23,7 @@ STRESS_INDEXES = slice(8, 9)  # like 8:9
 
 # Visualization settings  [374,356,302,387] overfit_traj_id: 2
 TRAJ_INDEX = 0
-T_STEP = 30  # time index t (visualize t -> t+1)
+T_STEP = 1  # time index t (visualize t -> t+1)
 ROLLOUT = False  # if True, run multi-step rollout
 ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
 RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
