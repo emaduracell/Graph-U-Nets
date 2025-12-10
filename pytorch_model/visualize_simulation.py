@@ -4,7 +4,7 @@ import yaml
 import os
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from defplate_dataset import add_edges
+from defplate_dataset import add_w_edges_radius
 from model_entire import GraphUNet_DefPlate
 
 # Data paths
@@ -24,10 +24,10 @@ STRESS_INDEXES = slice(8, 9)  # like 8:9
 # Visualization settings  [374,356,302,387] overfit_traj_id: 2
 TRAJ_INDEX = 0
 T_STEP = 1  # time index t (visualize t -> t+1)
-ROLLOUT = False  # if True, run multi-step rollout
-ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
+ROLLOUT = True  # if True, run multi-step rollout
+ROLLOUT_STEPS = 5  # maximum number of rollout steps for multi-step visualization
 RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
-ADD_WORLD_EDGES = True
+ADD_WORLD_EDGES = False
 
 
 def make_dynamic_edges_trace(coords, edge_index):
@@ -375,7 +375,7 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
         # The paper says world edges are based on spatial proximity in world space.
         # radius=0.03 from paper for deforming plate
         if ADD_WORLD_EDGES:
-            A_dynamic, dyn_edges = add_edges(base_A, node_type, p_hat, radius=0.03)
+            A_dynamic, dyn_edges = add_w_edges_radius(base_A, node_type, p_hat, radius=0.03)
         else:
             A_dynamic = base_A
             dyn_edges = None
@@ -443,9 +443,9 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
         # Calculate MSE: mean((Pred - True)^2)
         mse_step = torch.mean((p_hat_next - p_gt_next) ** 2)
         rollout_error_list.append(mse_step.item())
-        # ======================================================
+        # ===========================================================================================
         # 6) Build physical features X_{k+1} from (p_hat_{k+1}, v_hat_k+rigid/border overrides)
-        # ======================================================
+        # ==========================================================================================
         X_next_phys = torch.zeros_like(current_phys)
         X_next_phys[:, :3] = p_hat_next  # positions
         X_next_phys[:, NODE_TYPE_INDEXES] = node_type_onehot  # node type one-hot
@@ -590,7 +590,7 @@ def main():
         pos_pred_tensor = torch.tensor(pos_pred, device=device, dtype=torch.float32)
         
         if ADD_WORLD_EDGES:
-            _, dynamic_edges_single = add_edges(base_A_tensor, node_type_tensor, pos_pred_tensor, radius=0.03)
+            _, dynamic_edges_single = add_w_edges_radius(base_A_tensor, node_type_tensor, pos_pred_tensor, radius=0.03)
         else:
             dynamic_edges_single = None
 

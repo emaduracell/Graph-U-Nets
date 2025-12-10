@@ -12,24 +12,21 @@ from plots import make_final_plots
 from torch.optim.lr_scheduler import ExponentialLR
 import time
 
-# BOUNDARY_NODE = torch.Tensor([0., 1.])
-# NORMAL_NODE = torch.Tensor([0., 0.])
 BOUNDARY_NODE = 3
+SPHERE_NODE = 1
 NORMAL_NODE = 0
-VELOCITY_INDEXES = slice(8, 11)     # like 8:11
-STRESS_INDEXES = slice(11, 12)     # like 11:12
-dim_in = 12  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1)
-dim_out_vel = 3
-dim_out_stress = 1
+DIM_OUT_VEL = 3
+DIM_OUT_STRESS = 1
 # HARDCODED DATASET AND OUTPUT PATHS
-PREPROCESSED_DATA_PATH = "data/preprocessed_train.pt"
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 PLOTS_DIR = os.path.join(os.path.dirname(__file__), "plots")
 
-def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list):
+def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list, VELOCITY_INDEXES, STRESS_INDEXES):
     """
     Computes loss per batch
 
+    :param STRESS_INDEXES:
+    :param VELOCITY_INDEXES:
     :param adj_A_list:
         batch adjacency matrix list
     :param feat_tp1_mat_list:
@@ -118,7 +115,7 @@ def get_grad_norm(model):
     return total_norm
 
 
-def compute_batch_metrics(preds_list, targets_list, node_types_list):
+def compute_batch_metrics(preds_list, targets_list, node_types_list, VELOCITY_INDEXES, STRESS_INDEXES):
     """Compute MAE for the batch."""
     total_mae = 0.0
     count = 0
@@ -146,7 +143,8 @@ def compute_batch_metrics(preds_list, targets_list, node_types_list):
 
 
 def run_final_evaluation(model, test_loader, device, train_losses, val_losses, train_maes, val_maes, grad_norms,
-                         train_vel_losses, train_stress_losses, test_vel_losses, test_stress_losses):
+                         train_vel_losses, train_stress_losses, test_vel_losses, test_stress_losses, VELOCITY_INDEXES,
+                         STRESS_INDEXES):
     """
     Runs the final evaluation loop, collects data, and calls the plotting function.
 
@@ -245,6 +243,8 @@ def train_gnet_ema(device):
     """Training loop"""
     # Load configuration from YAML
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
+    dataconfig_path = os.path.join(os.path.dirname(__file__), "dataconfig.yaml")
+    dataconfig = load_config(dataconfig_path)
     config = load_config(config_path)
     # Extract model and training parameters
     model_cfg = config['model']
@@ -257,9 +257,24 @@ def train_gnet_ema(device):
     num_train_trajs = train_cfg['num_train_trajs']
     batch_size = train_cfg['batch_size']
     shuffle = train_cfg['shuffle']
-    add_world_edges = train_cfg.get('add_world_edges', True)
-    # Set random seed for reproducibility
-    random_seed = train_cfg.get('random_seed', 42)
+    add_world_edges = train_cfg['add_world_edges']
+    preprocessed_data_path = train_cfg['datapath']
+    random_seed = train_cfg['random_seed']
+    radius = train_cfg['radius']
+    k_neighb = train_cfg['k_neighb']
+    include_mesh_pos = dataconfig['data']['include_mesh_pos']
+
+    if include_mesh_pos:
+        MESH_POS_INDEXES = slice(0, 3)
+        VELOCITY_INDEXES = slice(8, 11)
+        STRESS_INDEXES = slice(11, 12)
+        DIM_IN = 12  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1)
+    else:
+        MESH_POS_INDEXES = None
+        VELOCITY_INDEXES = slice(5, 8)
+        STRESS_INDEXES = slice(8, 9)
+        DIM_IN = 9 # world_pos (3) + node_type (2) + vel (3) + stress (1)
+
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
     # load model configs from yaml
@@ -275,16 +290,16 @@ def train_gnet_ema(device):
     print("\n=================================================")
     print(" LOADING PREPROCESSED DATA")
     print("=================================================\n")
-    print(f"\t Preprocessed data: {PREPROCESSED_DATA_PATH}")
+    print(f"\t Preprocessed data: {preprocessed_data_path}")
 
     # Load preprocessed trajectories
-    if not os.path.exists(PREPROCESSED_DATA_PATH):
+    if not os.path.exists(preprocessed_data_path):
         raise FileNotFoundError(
-            f"Preprocessed data not found at {PREPROCESSED_DATA_PATH}\n"
+            f"Preprocessed data not found at {preprocessed_data_path}\n"
             f"Please run 'python preprocess_data.py' first to generate the preprocessed data."
         )
 
-    list_of_trajs = torch.load(PREPROCESSED_DATA_PATH)
+    list_of_trajs = torch.load(preprocessed_data_path)
     print(f"\t Loaded {len(list_of_trajs)} preprocessed trajectories")
 
     # Limit to num_train_trajs if specified
@@ -293,9 +308,10 @@ def train_gnet_ema(device):
         print(f"\t Using first {num_train_trajs} trajectories")
 
     # TODO SPECIFY WHICH TIME STEPS AND TRAJECTORIES WE'RE TRAINING ONE AND WHICH ONES ARE IN THE TEST SET INSTEAD
-
+    # TODO FOR 80-20 SPLIT
     # Build dataset from these trajectories
-    dataset = DefPlateDataset(list_of_trajs, add_world_edges=add_world_edges)
+    dataset = DefPlateDataset(list_of_trajs, add_world_edges=add_world_edges, k_neighb=k_neighb, radius=radius,
+                              mesh_pos_indexes=mesh_pos_indexes)
     print(f"Total training pairs (X_t, X_t+1): {len(dataset)}")
     # Random 80/20 split and then load data
     total = len(dataset)
@@ -351,7 +367,7 @@ def train_gnet_ema(device):
 
     # Build model
     # dim_in = list_of_trajs[0]["X_seq_norm"].shape[2]
-    model = GraphUNet_DefPlate(dim_in, dim_out_vel, dim_out_stress, model_hyperparams).to(device)
+    model = GraphUNet_DefPlate(DIM_IN, DIM_OUT_VEL, DIM_OUT_STRESS, model_hyperparams).to(device)
     optimizer = optim.Adam(model.parameters(), lr=start_lr, weight_decay=adam_weight_decay)
     scheduler = ExponentialLR(optimizer, gamma=gamma_lr_scheduler)
 
@@ -404,7 +420,8 @@ def train_gnet_ema(device):
             # batch_loss, preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
             preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types_cpu)
             batch_loss, vel_loss_batch_avgd, stress_loss_batch_avgd = compute_loss(adj_mat_list, feat_tp1_mat_list,
-                                                                                   node_types_cpu, preds_list)
+                                                                                   node_types_cpu, preds_list,
+                                                                                   VELOCITY_INDEXES, STRESS_INDEXES)
             batch_loss.backward()
             # Compute grad norm
             norm = get_grad_norm(model)
@@ -416,7 +433,8 @@ def train_gnet_ema(device):
             total_train_vel_loss += vel_loss_batch_avgd.item()
             total_train_stress_loss += stress_loss_batch_avgd.item()
             # Compute MAE
-            mae, count = compute_batch_metrics(preds_list, feat_tp1_mat_list, node_types_cpu)
+            mae, count = compute_batch_metrics(preds_list, feat_tp1_mat_list, node_types_cpu, VELOCITY_INDEXES,
+                                               STRESS_INDEXES)
             total_train_mae += mae
             total_train_count += count
             # batches count
@@ -447,7 +465,8 @@ def train_gnet_ema(device):
 
                 preds_list = model(adj_mat_cpu_list, feat_mat_cpu_list, feat_mat_cpu_list_tp1, node_types_cpu)
                 batch_loss, vel_loss_batch_avgd, stress_loss_batch_avgd = \
-                    compute_loss(adj_mat_cpu_list, feat_mat_cpu_list_tp1, node_types_cpu, preds_list)
+                    compute_loss(adj_mat_cpu_list, feat_mat_cpu_list_tp1, node_types_cpu, preds_list, VELOCITY_INDEXES,
+                                 STRESS_INDEXES)
 
                 total_test_vel_loss += vel_loss_batch_avgd
                 total_test_stress_loss += stress_loss_batch_avgd
@@ -497,7 +516,8 @@ def train_gnet_ema(device):
     torch.save(model.state_dict(), CHECKPOINT_PATH)
     # Final plots
     run_final_evaluation(model, test_loader, device, train_losses, val_losses, train_maes, val_maes, grad_norms,
-                         train_vel_losses, train_stress_losses, test_vel_losses, test_stress_losses)
+                         train_vel_losses, train_stress_losses, test_vel_losses, test_stress_losses, VELOCITY_INDEXES,
+                         STRESS_INDEXES)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from graph_unet_layers import GCN, GraphUnet, Initializer, norm_g
 
 
+
 class GraphUNet_DefPlate(nn.Module):
     """
     Graph U-Net model for one-step graph-to-graph prediction: (A, X_t) -> (velocity_vec_{t+1}, stress_{t+1})
@@ -158,7 +159,7 @@ class GraphUNet_DefPlate(nn.Module):
         :returns y_pred: [N, F_out]
             predicted node features at t+1
         """
-        # Normalize adjacency TODO UNDERSTAND IF IT'S REMOVABLE
+        # Normalize adjacency
         g = norm_g(g)  # [N, N]
         # Initial GCN
         h0 = self.start_gcn(g, h)  # [N, l_dim]

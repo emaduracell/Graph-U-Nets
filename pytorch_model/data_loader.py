@@ -2,20 +2,23 @@ import json
 import torch
 import numpy as np
 from tfrecord.reader import tfrecord_loader
+import os
+import yaml
 
 NORMAL_NODE = [0, 0]  # value 0 (NORMAL)
 SPHERE_NODE = [1, 0]  # value 1 (SPHERE)
 BOUNDARY_NODE = [0, 1]  # value 3 (BOUNDARY)
-NODE_TYPE_START = 6
-NODE_TYPE_END = 8
-WORLD_POS_INDEXES = slice(3, 6)
-VELOCITY_INDEXES = slice(8, 11)
-STRESS_INDEXES = slice(11, 12)
-MESH_POS_INDEXES = slice(0, 3)
 VELOCITY_MEAN = 0.0
 TFRECORD_PATH = "data/train.tfrecord"
 META_PATH = "data/meta.json"
 NUM_TRAIN_TRAJS = 1500  # Load only the first K trajectories
+
+def load_config(config_path):
+    """Load model and training configuration from YAML file."""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
+
 
 def _cast_to_bytes(value):
     """
@@ -171,7 +174,8 @@ def build_edges_from_cells(mesh_cells):
     return torch.tensor(edge_list, dtype=torch.long)
 
 
-def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
+def load_all_trajectories(tfrecord_path, meta_path, max_trajs, MESH_POS_INDEXES, WORLD_POS_INDEXES, NODE_TYPE_INDEXES,
+                          VELOCITY_INDEXES, STRESS_INDEXES, include_mesh_pos, norm_method):
     """
     Load up to `max_trajs` trajectories from TFRecord.
 
@@ -213,9 +217,17 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         stress = traj["stress"]  # (T,N,1)
         node_type = traj["node_type"]  # (N,1)
         mesh_cells = traj["cells"]  # (C,4)
-        mesh_pos = traj["mesh_pos"]
+        if include_mesh_pos:
+            mesh_pos = traj["mesh_pos"]
+
         if idx == 0 or idx == 1 or idx == 2:
             print(f"traj: \n \t type(traj) = {type(traj)}, len={len(traj)}")
+            if include_mesh_pos:
+                print(f"mesh pos: \n"
+                      f"\t type(mesh_pos) = {type(mesh_pos)} \n \t type(mesh_pos[0])={type(mesh_pos[0])}, "
+                      f"\n \t shape(mesh_pos) = {mesh_pos.shape} \n \t shape(mesh_pos[0])={type(mesh_pos[0].shape)}"
+                      f"\n \t type(mesh_pos[0][0])={type(mesh_pos[0][0])}) \n \t len(mesh_pos)={len(mesh_pos)} "
+                      f"\n \t len(mesh_pos[0])={len(mesh_pos[0])}")
             print(f"world pos: \n"
                   f"\t type(world_pos) = {type(world_pos)} \n \t type(world_pos[0])={type(world_pos[0])}, "
                   f"\n \t type(world_pos[0][0])={type(world_pos[0][0])}) \n \t len(world_pos)={len(world_pos)} "
@@ -241,20 +253,16 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         for t in range(1, time_step_dim):
             vel[t] = world_pos[t] - world_pos[t - 1]
 
-        lookup = np.array([
-            NORMAL_NODE,  # value 0 (NORMAL)
-            SPHERE_NODE,  # value 1 (SPHERE)
-            [0, 0],  # value 2 (not used)
-            BOUNDARY_NODE,  # value 3 (BOUNDARY)
-        ])
-        # Keep a copy of the raw scalar node types for plotting later
-        node_type_raw = node_type.copy()  # shape (N, 1)
-        node_type_idx = node_type_raw.squeeze(-1)  # (N,)
-        node_type_onehot = lookup[node_type_idx]  # (N, 2)
+        # ONe hot node type
+        lookup = np.array([NORMAL_NODE, SPHERE_NODE, [0, 0], BOUNDARY_NODE])
+        node_type_raw = node_type.copy()
+        node_type_idx = node_type_raw.squeeze(-1)
+        node_type_onehot = lookup[node_type_idx]
 
+        # Debug
         if idx == 1 or idx == 2:
             print(
-                f"node_type: \n \t type(node_type) = {type(node_type)} \n \t type(node_type[0])={type(node_type[0])}, "
+                f"[data_loader] node_type: \n \t type(node_type) = {type(node_type)} \n \t type(node_type[0])={type(node_type[0])}, "
                 f"\n \t type(node_type[0][0])={type(node_type[0][0])}) \n \t len(node_type)={len(node_type)} "
                 f"\n \t len(node_type[0])={len(node_type[0])}")
 
@@ -263,21 +271,37 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         node_type_floatcast = node_type_onehot.astype(np.float32)
 
         for t in range(time_step_dim):
-            # Compute frame centroid for world_pos
-            centroid_world = world_pos[t].mean(axis=0)  # [3]
-            centered_world_pos = world_pos[t] - centroid_world
-            
-            # Compute frame centroid for mesh_pos (static, but done per frame for consistency if needed, though mesh_pos is static)
-            # Actually mesh_pos is static [N, 3], so we compute its centroid once per traj
-            centroid_mesh = mesh_pos.mean(axis=0)
-            centered_mesh_pos = mesh_pos - centroid_mesh
+            if norm_method == "physics":
+                # Compute frame centroid for world_pos
+                centroid_world = world_pos[t].mean(axis=0)  # [3]
+                centered_world_pos = world_pos[t] - centroid_world
 
-            # ---- velocity centroid + "normalization" (centering) ----
-            # This removes the rigid/global translation component of velocity
-            centroid_vel = vel[t].mean(axis=0)                 # [3]
-            vel_centered = vel[t] - centroid_vel               # [N,3]
+                if include_mesh_pos:
+                    # Compute frame centroid for mesh_pos (static, but done per frame for consistency if needed, though mesh_pos is static)
+                    # Actually mesh_pos is static [N, 3], so we compute its centroid once per traj
+                    centroid_mesh = mesh_pos.mean(axis=0)
+                    centered_mesh_pos = mesh_pos - centroid_mesh
 
-            feats_t = np.concatenate([centered_mesh_pos, centered_world_pos, node_type_floatcast, vel_centered, stress[t]], axis=-1)
+                # ---- velocity centroid + "normalization" (centering) ----
+                # This removes the rigid/global translation component of velocity
+                centroid_vel = vel[t].mean(axis=0)                 # [3]
+                vel_centered = vel[t] - centroid_vel               # [N,3]
+
+                if include_mesh_pos:
+                    feats_t = np.concatenate([centered_mesh_pos, centered_world_pos, node_type_floatcast,
+                                              vel_centered, stress[t]], axis=-1)
+                else:
+                    feats_t = np.concatenate([centered_world_pos, node_type_floatcast, vel_centered,
+                                              stress[t]], axis=-1)
+
+            else:
+                if include_mesh_pos:
+                    feats_t = np.concatenate([mesh_pos, world_pos[t], node_type_floatcast, vel[t], stress[t]],
+                                             axis=-1)
+                else:
+                    feats_t = np.concatenate([world_pos[t], node_type_floatcast, vel[t], stress[t]], axis=-1)
+
+
             feats_list.append(feats_t)
 
         X_seq = torch.tensor(np.stack(feats_list, axis=0), dtype=torch.float32)
@@ -297,13 +321,13 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         # sanity checks before normalization
         row_sums = A.sum(dim=1)
         if not torch.allclose(row_sums, torch.ones_like(row_sums), atol=1e-5):
-            print(f"[load_all_trajectories] BAD A just built for traj {traj_idx}")
-            print("  min row sum:", row_sums.min().item())
-            print("  max row sum:", row_sums.max().item())
+            print(f"[data_loader] BAD A just built for traj {traj_idx}")
+            print("\t min row sum:", row_sums.min().item())
+            print("\t max row sum:", row_sums.max().item())
             # Optionally inspect mesh_cells as well
-            print("  mesh_cells shape:", mesh_cells.shape)
-            print("  max index in mesh_cells:", mesh_cells.max())
-            print("  number_of_nodes:", number_of_nodes)
+            print("\t mesh_cells shape:", mesh_cells.shape)
+            print("\t max index in mesh_cells:", mesh_cells.max())
+            print("\t number_of_nodes:", number_of_nodes)
             raise RuntimeError("Adjacency normalization failed immediately after construction.")
         # ensure cells and node_type are tensors, passing them to plot border and sphere separately (not predicted)
         cells_tensor = torch.tensor(mesh_cells, dtype=torch.long)
@@ -322,48 +346,67 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
     # We still compute global mean/std for normalization.
     
     mean = sum_elements / element_num
+
+    if norm_method == "physics":
     
-    # Force velocity mean to 0
-    mean[VELOCITY_INDEXES] = VELOCITY_MEAN
-    
-    # 2. Compute Global Standard Deviation
-    # We need to re-iterate to calculate variance correctly
-    accumulated_variance = torch.zeros_like(mean)
-    for traj in list_of_trajs:
-        X = traj['X_seq_norm']
-        # For velocity, since we forced mean=0, this computes sum(v^2), which leads to RMS
-        accumulated_variance += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
-    # Standard Deviation (or RMS for velocity)
-    std_dev = torch.sqrt(accumulated_variance / (element_num - 1))
+        # Force velocity mean to 0
+        mean[VELOCITY_INDEXES] = VELOCITY_MEAN
 
-    # B. World Position: Isotropic Std across x, y, z
-    # Since we centered positions per-frame, the mean is ~0.
-    pos_variances = accumulated_variance[WORLD_POS_INDEXES]
-    pos_std_isotropic = torch.sqrt(pos_variances.sum() / ((element_num - 1) * 3))
-    std_dev[WORLD_POS_INDEXES] = pos_std_isotropic
+        # 2. Compute Global Standard Deviation
+        # We need to re-iterate to calculate variance correctly
+        accumulated_variance = torch.zeros_like(mean)
+        for traj in list_of_trajs:
+            X = traj['X_seq_norm']
+            # For velocity, since we forced mean=0, this computes sum(v^2), which leads to RMS
+            accumulated_variance += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
+        # Standard Deviation (or RMS for velocity)
+        std_dev = torch.sqrt(accumulated_variance / (element_num - 1))
 
-    # C. Mesh Position: Isotropic Std across x, y, z
-    mesh_variances = accumulated_variance[MESH_POS_INDEXES]
-    mesh_std_isotropic = torch.sqrt(mesh_variances.sum() / ((element_num - 1) * 3))
-    std_dev[MESH_POS_INDEXES] = mesh_std_isotropic
+        # B. World Position: Isotropic Std across x, y, z
+        # Since we centered positions per-frame, the mean is ~0.
+        pos_variances = accumulated_variance[WORLD_POS_INDEXES]
+        pos_std_isotropic = torch.sqrt(pos_variances.sum() / ((element_num - 1) * 3))
+        std_dev[WORLD_POS_INDEXES] = pos_std_isotropic
 
-    # 4. Isotropic scaling for Velocity
-    # max_std_vel = std_dev[VELOCITY_INDEXES].max()
-    # std_dev[VELOCITY_INDEXES] = max_std_vel
-    vel_variances = accumulated_variance[VELOCITY_INDEXES] # Shape [3]
-    # Sum of squared errors for all 3 components / (Total Elements * 3)
-    # Note: element_num is N*T. The total count for 3 components is element_num * 3
-    vel_rms = torch.sqrt(vel_variances.sum() / ((element_num - 1) * 3))
-    std_dev[VELOCITY_INDEXES] = vel_rms
-    
-    # 5. Node Type: keep one-hot (no normalization)
-    # mean is already computed, but we force it to 0 and std to 1 for node types
-    mean[NODE_TYPE_START:NODE_TYPE_END] = 0.0
-    std_dev[NODE_TYPE_START:NODE_TYPE_END] = 1.0
+        if include_mesh_pos:
+            # C. Mesh Position: Isotropic Std across x, y, z
+            mesh_variances = accumulated_variance[MESH_POS_INDEXES]
+            mesh_std_isotropic = torch.sqrt(mesh_variances.sum() / ((element_num - 1) * 3))
+            std_dev[MESH_POS_INDEXES] = mesh_std_isotropic
 
+        # 4. Isotropic scaling for Velocity
+        # max_std_vel = std_dev[VELOCITY_INDEXES].max()
+        # std_dev[VELOCITY_INDEXES] = max_std_vel
+        vel_variances = accumulated_variance[VELOCITY_INDEXES] # Shape [3]
+        # Sum of squared errors for all 3 components / (Total Elements * 3)
+        # Note: element_num is N*T. The total count for 3 components is element_num * 3
+        vel_rms = torch.sqrt(vel_variances.sum() / ((element_num - 1) * 3))
+        std_dev[VELOCITY_INDEXES] = vel_rms
 
-    # 6. Stress: Standard normalization (already handled by default mean/std calculation)
-    # Just ensure we don't overwrite it with isotropic logic
+        # 5. Node Type: keep one-hot (no normalization)
+        # mean is already computed, but we force it to 0 and std to 1 for node types
+        mean[NODE_TYPE_INDEXES] = 0.0
+        std_dev[NODE_TYPE_INDEXES] = 1.0
+
+    else:
+        # Position
+        shared_mean_pos = mean[WORLD_POS_INDEXES].mean()
+        mean[WORLD_POS_INDEXES] = shared_mean_pos
+
+        # Velocity (cols 5,6,7)
+        shared_mean_vel = mean[VELOCITY_INDEXES].mean()
+        mean[VELOCITY_INDEXES] = shared_mean_vel
+        std_acc = torch.zeros_like(mean)
+
+        for traj in list_of_trajs:
+            X = traj['X_seq_norm']
+            std_acc += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
+
+        std_dev = torch.sqrt(std_acc / (element_num - 1))
+        max_std_pos = std_dev[WORLD_POS_INDEXES].max()
+        std_dev[WORLD_POS_INDEXES] = max_std_pos
+        max_std_vel = std_dev[VELOCITY_INDEXES].max()
+        std_dev[VELOCITY_INDEXES] = max_std_vel
     
     # Broadcastable shapes
     mean_b = mean.view(1, 1, -1)
@@ -382,4 +425,26 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
 
 
 if __name__ == "__main__":
-    list_of_trajs = load_all_trajectories(TFRECORD_PATH, META_PATH, NUM_TRAIN_TRAJS)
+    dataconfig_path = os.path.join(os.path.dirname(__file__), "dataconfig.yaml")
+    dataconfig = load_config(dataconfig_path)
+    include_mesh_pos = dataconfig['data']['include_mesh_pos']
+    norm_method = dataconfig['data']['normalization_method']
+
+    if include_mesh_pos:
+        MESH_POS_INDEXES = slice(0, 3)
+        WORLD_POS_INDEXES = slice(3, 6)
+        NODE_TYPE_INDEXES = slice(6, 8)
+        VELOCITY_INDEXES = slice(8, 11)
+        STRESS_INDEXES = slice(11, 12)
+        DIM_IN = 12  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1)
+    else:
+        WORLD_POS_INDEXES = slice(0, 3)
+        NODE_TYPE_INDEXES = slice(3, 5)
+        VELOCITY_INDEXES = slice(5, 8)
+        STRESS_INDEXES = slice(8, 9)
+        MESH_POS_INDEXES = None
+        DIM_IN = 9 # world_pos (3) + node_type (2) + vel (3) + stress (1)
+
+    list_of_trajs = load_all_trajectories(TFRECORD_PATH, META_PATH, NUM_TRAIN_TRAJS, MESH_POS_INDEXES,
+                                          WORLD_POS_INDEXES, NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES,
+                                          include_mesh_pos, norm_method)

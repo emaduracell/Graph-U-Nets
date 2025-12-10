@@ -1,15 +1,9 @@
 import torch
 import os
-from data_loader import load_all_trajectories  # TODO CHANGE
+from data_loader import load_all_trajectories, load_config
 
-# Global configuration constants
-TFRECORD_PATH = "data/train.tfrecord"
-META_PATH = "data/meta.json"
-OUTPUT_DIR = "data"
-MAX_TRAJS = None  # Set to None to load all trajectories, or specify a number
-
-
-def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs):
+def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs, MESH_POS_INDEXES, WORLD_POS_INDEXES,
+                        NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES, include_mesh_pos, norm_method):
     """
     Load trajectories from TFRecord, preprocess them, and save to disk.
     
@@ -29,7 +23,9 @@ def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs):
     # Load and preprocess all trajectories
     # Note: Trajectories are loaded in deterministic sequential order from TFRecord
     # and will be saved maintaining this order (traj_id 0, 1, 2, ...)
-    list_of_trajs = load_all_trajectories(tfrecord_path, meta_path, max_trajs=max_trajs)
+    list_of_trajs = load_all_trajectories(tfrecord_path, meta_path, max_trajs, MESH_POS_INDEXES, WORLD_POS_INDEXES,
+                                          NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES, include_mesh_pos,
+                                          norm_method)
 
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -70,15 +66,39 @@ def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs):
     return output_path
 
 
-def main():
+def main(tfrecord_path, meta_path, max_trajs, output_dir, MESH_POS_INDEXES, WORLD_POS_INDEXES, NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES, include_mesh_pos,
+        norm_method):
     """Run preprocessing with global configuration constants."""
-    preprocess_and_save(
-        tfrecord_path=TFRECORD_PATH,
-        meta_path=META_PATH,
-        output_dir=OUTPUT_DIR,
-        max_trajs=MAX_TRAJS
-    )
+    preprocess_and_save(tfrecord_path, meta_path, max_trajs, output_dir,
+                        MESH_POS_INDEXES, WORLD_POS_INDEXES, NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES,
+                        include_mesh_pos, norm_method)
 
 
 if __name__ == "__main__":
-    main()
+    dataconfig_path = os.path.join(os.path.dirname(__file__), "dataconfig.yaml")
+    dataconfig = load_config(dataconfig_path)
+    include_mesh_pos = dataconfig['data']['include_mesh_pos']
+    norm_method = dataconfig['data']['normalization_method']
+    max_trajs = dataconfig['data']['max_trajs']
+    tfrecord_path = dataconfig['data']['tfrecord_path']
+    meta_path = dataconfig['data']['meta_path']
+    output_dir = dataconfig['data']['output_dir']
+    output_dir = output_dir + f"_{norm_method}_{include_mesh_pos}"
+
+    if include_mesh_pos:
+        mesh_pos_idxs = slice(0, 3)
+        world_pos_idxs = slice(3, 6)
+        node_type_idxs = slice(6, 8)
+        velocity_idxs = slice(8, 11)
+        stress_idxs = slice(11, 12)
+        dim_in = 12  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1)
+    else:
+        world_pos_idxs = slice(0, 3)
+        node_type_idxs = slice(3, 5)
+        velocity_idxs = slice(5, 8)
+        stress_idxs = slice(8, 9)
+        mesh_pos_idxs = None
+        dim_in = 9 # world_pos (3) + node_type (2) + vel (3) + stress (1)
+
+    main(tfrecord_path, meta_path, max_trajs, output_dir, mesh_pos_idxs, world_pos_idxs, node_type_idxs, velocity_idxs,
+         stress_idxs, include_mesh_pos, norm_method)

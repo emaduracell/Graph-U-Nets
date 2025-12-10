@@ -5,15 +5,71 @@ import time
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
 SPHERE_NODE = 1
-MESH_POS_INDEXES = slice(3, 6)  # like 3:6
-RADIUS_WORLD_EDGE = 0.03
 
-def add_edges(base_A, node_types, pos_t, radius):
+def add_w_edges_neigh(base_A, node_types, pos_t, k):
+    """
+    For each Sphere node, it looks at its k-nearest neighbors.
+    If a neighbor is a Plate node (Normal or Boundary), it adds an edge.
+    If a neighbor is another Sphere node, it ignores it (assumed already handled or irrelevant).
+
+    :param base_A
+    :param node_types
+    :param pos_t
+    :param radius
+
+    :return: (A_norm, dynamic_edges)
+    """
+    A_t = base_A.clone()
+
+    # 1. Identify Sphere indices
+    sphere_indices = torch.nonzero(node_types == SPHERE_NODE, as_tuple=True)[0]
+
+    if len(sphere_indices) > 0:
+
+        # Start from sphere indices and get
+        sphere_pos = pos_t[sphere_indices]
+        dists = torch.cdist(sphere_pos, pos_t)
+        k_val = min(k + 1, len(pos_t))
+        _, neighbor_indices = torch.topk(dists, k=k_val, dim=1, largest=False)
+
+        # Get type of neighbors and create a boolean mask for valid connections, then apply
+        nb_types = node_types[neighbor_indices]
+        type_mask = (nb_types == NORMAL_NODE) | (nb_types == BOUNDARY_NODE)
+        self_mask = neighbor_indices != sphere_indices.unsqueeze(1)
+        valid_mask = type_mask & self_mask
+        source_idxs = sphere_indices.unsqueeze(1).expand_as(neighbor_indices)[valid_mask]
+        target_idxs = neighbor_indices[valid_mask]
+
+        # Update the adjacency matrix and return edge list
+        A_t.index_put_((source_idxs, target_idxs), torch.tensor(1.0, device=A_t.device))
+        A_t.index_put_((target_idxs, source_idxs), torch.tensor(1.0, device=A_t.device))
+        if len(source_idxs) > 0:
+            dynamic_edges = torch.stack([source_idxs, target_idxs], dim=0)
+        else:
+            dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=A_t.device)
+
+    else:
+        dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=A_t.device)
+
+    # Normalize new adjacency matrix TODO NOTE: ROW WISE
+    row_sums = A_t.sum(dim=1, keepdim=True)
+    row_sums[row_sums == 0] = 1.0
+    A_norm = A_t / row_sums
+
+    return A_norm, dynamic_edges
+
+
+def add_w_edges_radius(base_A, node_types, pos_t, radius):
     """
     Computes A_t dynamically using radius search.
     Excludes existing mesh edges (base_A) and self-loops.
 
-    Returns:
+    :param base_A
+    :param node_types
+    :param pos_t
+    :param radius
+
+    :return: (A_norm, dynamic_edges)
         A_norm: Normalized adjacency matrix (including mesh edges + world edges + self loops)
         dynamic_edges: Edge list of ONLY the newly added world edges (2, E_world)
     """
@@ -21,36 +77,24 @@ def add_edges(base_A, node_types, pos_t, radius):
     if base_A.device != pos_t.device:
         base_A = base_A.to(pos_t.device)
 
-    # 1. Compute pairwise distances
+    # Compute pairwise distances, mask radius and esclude self loops
     dists = torch.cdist(pos_t, pos_t)
-
-    # 2. Radius mask (dist < r)
     radius_mask = dists < radius
-
-    # 3. Exclude self-loops
     radius_mask.fill_diagonal_(False)
 
-    # 4. Exclude existing mesh edges
-    # base_A is already normalized, but non-zero entries imply edges
+    # Exclude existing mesh edges
     mesh_edge_mask = base_A > 0
-
-    # Valid world edges: in radius AND NOT in mesh
     valid_world_mask = radius_mask & (~mesh_edge_mask)
 
-    # 5. Build combined adjacency
-    # Convert base mesh to binary (1.0 for edge)
+    # Build combined adjacency and normalize
     binary_mesh = mesh_edge_mask.float()
     binary_world = valid_world_mask.float()
-
     A_combined = binary_mesh + binary_world
-
-    # 6. Normalize
     row_sums = A_combined.sum(dim=1, keepdim=True)
     row_sums[row_sums == 0] = 1.0
     A_norm = A_combined / row_sums
 
-    # 7. Extract edge list for world edges (for return)
-    # We want (source, target) pairs for world edges only
+    # Extract edge list for world edges (for return)
     dynamic_edges = torch.nonzero(binary_world, as_tuple=False).t()
     if dynamic_edges.numel() == 0:
          dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=pos_t.device)
@@ -62,7 +106,7 @@ class DefPlateDataset(Dataset):
     total_comp_time = 0.0
     total_comp_calls = 0
 
-    def __init__(self, list_of_trajs, add_world_edges=True):
+    def __init__(self, list_of_trajs, add_world_edges, k_neighb, radius, mesh_pos_indexes):
         """
         Construct a dataset from a list of trajectories objects.
 
@@ -70,11 +114,18 @@ class DefPlateDataset(Dataset):
             a list where each item has (A, X_seq_norm, mean, std, cells, node_type)
         :param add_world_edges: bool
             whether to add world edges dynamically based on radius search
+        :param k_neighb
+
+        :param radius
+
         """
         self.samples = []
         # Store the list of trajectories
         self.trajs = list_of_trajs
         self.add_world_edges = add_world_edges
+        self.k_neighb = k_neighb
+        self.radius = radius
+        self.mesh_pos_indexes = mesh_pos_indexes
 
         for traj_id, traj in enumerate(list_of_trajs):
             X_seq = traj["X_seq_norm"]
@@ -82,10 +133,7 @@ class DefPlateDataset(Dataset):
 
             # Indexing: We create a sample for every transition t -> t+1
             for t in range(T - 1):
-                self.samples.append({
-                    "traj_id": traj_id,
-                    "time_idx": t,
-                })
+                self.samples.append({"traj_id": traj_id, "time_idx": t})
 
     def __len__(self):
         """Returns the number of samples (trajectories)"""
@@ -95,36 +143,40 @@ class DefPlateDataset(Dataset):
         """
         Fetches the sample and computes the dynamic adjacency matrix on-the-fly.
         """
+        # Retrieve trajectory and its features
         s = self.samples[idx]
         traj_id = s["traj_id"]
         t = s["time_idx"]
-
-        # Retrieve the trajectory
         traj = self.trajs[traj_id]
+        X_t = traj["X_seq_norm"][t]
+        X_tp1 = traj["X_seq_norm"][t + 1]
+        base_A = traj["A"]
+        node_types = traj["node_type"]
 
+        # time tracking
         time_start = time.time()
-        # 1. Get Features for t and t+1
-        X_t = traj["X_seq_norm"][t]  # Shape: [N, F]
-        X_tp1 = traj["X_seq_norm"][t + 1]  # Shape: [N, F]
 
-        # 2. Get Static Data
-        base_A = traj["A"]  # Shape: [N, N] (Static Mesh)
-        node_types = traj["node_type"]  # Shape: [N]
+        # Compute Dynamic Adjacency TODO UNDERSTAND
+        pos_t = X_t[:, self.mesh_pos_indexes]
 
-        # 3. Compute Dynamic Adjacency
-        # X_t layout: mesh_pos(0:3), world_pos(3:6), node_type(6:8), ...
-        pos_t = X_t[:, MESH_POS_INDEXES]
-
-        # This function adds edges between the ball and the plate based on proximity
-        if self.add_world_edges:
-            A_dynamic, dynamic_edges = add_edges(base_A=base_A, node_types=node_types, pos_t=pos_t, radius=RADIUS_WORLD_EDGE)
-        else:
+        # Add world edges
+        if self.add_world_edges == "radius":
+            A_dynamic, dynamic_edges = add_w_edges_radius(base_A=base_A, node_types=node_types, pos_t=pos_t,
+                                                          radius=self.radius)
+            self.total_comp_calls += 1
+            time_end = time.time()
+            self.total_comp_time += time_start - time_end
+        elif self.add_world_edges == "neighbours":
+            A_dynamic, dynamic_edges = add_w_edges_neigh(base_A=base_A, node_types=node_types, pos_t=pos_t,
+                                                          k=self.k_neighb)
+            self.total_comp_calls += 1
+            time_end = time.time()
+            self.total_comp_time += time_start - time_end
+        elif self.add_world_edges is None:
             A_dynamic = base_A
             dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=base_A.device)
-
-        time_end = time.time()
-        self.total_comp_time += time_start - time_end
-        self.total_comp_calls += 1
+        else:
+            raise ValueError(f"f[defplate_dataset] Wrong add world edges param specified = {self.add_world_edges}")
 
         # Pass all inputs to model: mesh_pos, world_pos, node_type, vel, stress
         X_t_input = X_t
