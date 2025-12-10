@@ -16,8 +16,11 @@ import time
 # NORMAL_NODE = torch.Tensor([0., 0.])
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
-VELOCITY_INDEXES = slice(5, 8)     # like 5:8
-STRESS_INDEXES = slice(8, 9)     # like 8:9
+VELOCITY_INDEXES = slice(8, 11)     # like 8:11
+STRESS_INDEXES = slice(11, 12)     # like 11:12
+dim_in = 12  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1)
+dim_out_vel = 3
+dim_out_stress = 1
 # HARDCODED DATASET AND OUTPUT PATHS
 PREPROCESSED_DATA_PATH = "data/preprocessed_train.pt"
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
@@ -346,9 +349,7 @@ def train_gnet_ema(device):
             print(f"  sample {i:02d}: traj_id={int(tr)}, t={int(ti)}")
 
     # Build model
-    dim_in = list_of_trajs[0]["X_seq_norm"].shape[2]
-    dim_out_vel = 3
-    dim_out_stress = 1
+    # dim_in = list_of_trajs[0]["X_seq_norm"].shape[2]
     model = GraphUNet_DefPlate(dim_in, dim_out_vel, dim_out_stress, model_hyperparams).to(device)
     optimizer = optim.Adam(model.parameters(), lr=start_lr, weight_decay=adam_weight_decay)
     scheduler = ExponentialLR(optimizer, gamma=gamma_lr_scheduler)

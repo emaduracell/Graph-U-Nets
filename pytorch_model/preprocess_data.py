@@ -1,6 +1,6 @@
 import torch
 import os
-from data_loader_v2 import load_all_trajectories  # TODO CHANGE
+from data_loader import load_all_trajectories  # TODO CHANGE
 
 # Global configuration constants
 TFRECORD_PATH = "data/train.tfrecord"

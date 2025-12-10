@@ -6,6 +6,12 @@ from tfrecord.reader import tfrecord_loader
 NORMAL_NODE = [0, 0]  # value 0 (NORMAL)
 SPHERE_NODE = [1, 0]  # value 1 (SPHERE)
 BOUNDARY_NODE = [0, 1]  # value 3 (BOUNDARY)
+NODE_TYPE_START = 6
+NODE_TYPE_END = 8
+WORLD_POS_INDEXES = slice(3, 6)
+VELOCITY_INDEXES = slice(8, 11)
+STRESS_INDEXES = slice(11, 12)
+MESH_POS_INDEXES = slice(0, 3)
 
 def _cast_to_bytes(value):
     """
@@ -247,12 +253,21 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
                 f"\n \t type(node_type[0][0])={type(node_type[0][0])}) \n \t len(node_type)={len(node_type)} "
                 f"\n \t len(node_type[0])={len(node_type[0])}")
 
-        # Build feature sequence Feature layout: [pos_x, pos_y, pos_z, node_type, vel_x, vel_y, vel_z, stress]
+        # Build feature sequence Feature layout: [mesh_pos, pos_x, pos_y, pos_z, node_type, vel_x, vel_y, vel_z, stress]
         feats_list = []
         node_type_floatcast = node_type_onehot.astype(np.float32)
 
         for t in range(time_step_dim):
-            feats_t = np.concatenate([world_pos[t], node_type_floatcast, vel[t], stress[t]], axis=-1)
+            # Compute frame centroid for world_pos
+            centroid_world = world_pos[t].mean(axis=0)  # [3]
+            centered_world_pos = world_pos[t] - centroid_world
+            
+            # Compute frame centroid for mesh_pos (static, but done per frame for consistency if needed, though mesh_pos is static)
+            # Actually mesh_pos is static [N, 3], so we compute its centroid once per traj
+            centroid_mesh = mesh_pos.mean(axis=0)
+            centered_mesh_pos = mesh_pos - centroid_mesh
+
+            feats_t = np.concatenate([centered_mesh_pos, centered_world_pos, node_type_floatcast, vel[t], stress[t]], axis=-1)
             feats_list.append(feats_t)
         X_seq = torch.tensor(np.stack(feats_list, axis=0), dtype=torch.float32)
         # print(f"X_seq.shape={X_seq.shape}")
@@ -292,34 +307,42 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         })
         # print(f"Loaded trajectory {traj_idx}")
 
+    # Now that positions are centered per frame/traj, mean is approx 0 for positions.
+    # We still compute global mean/std for normalization.
+    
     mean = sum_elements / element_num
-
-    # Common normalization for velocity and position, mean
-    # # Position
-    # shared_mean_pos = mean[0:3].mean()
-    # mean[0:3] = shared_mean_pos
-    # # Velocity (cols 5,6,7)
-    # shared_mean_vel = mean[5:8].mean()
-    # mean[5:8] = shared_mean_vel
-
+    
+    # Force velocity mean to 0
+    mean[VELOCITY_INDEXES] = 0.0
+    
+    # Calculate std dev
     std_acc = torch.zeros_like(mean)
     for traj in list_of_trajs:
         X = traj['X_seq_norm']
         std_acc += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
-
     std_dev = torch.sqrt(std_acc / (element_num - 1))
 
-    # Common normalization for position and velocity components, stdev
-    max_std_pos = std_dev[0:3].max()
-    std_dev[0:3] = max_std_pos
-    max_std_vel = std_dev[5:8].max()
-    std_dev[5:8] = max_std_vel
+    # 2. Isotropic scaling for Mesh Position
+    max_std_mesh = std_dev[MESH_POS_INDEXES].max()
+    std_dev[MESH_POS_INDEXES] = max_std_mesh
 
-    NODE_TYPE_START = 3
-    NODE_TYPE_END = 5
+    # 3. Isotropic scaling for World Position
+    max_std_pos = std_dev[WORLD_POS_INDEXES].max()
+    std_dev[WORLD_POS_INDEXES] = max_std_pos
+
+    # 4. Isotropic scaling for Velocity
+    max_std_vel = std_dev[VELOCITY_INDEXES].max()
+    std_dev[VELOCITY_INDEXES] = max_std_vel
+    
+    # 5. Node Type: keep one-hot (no normalization)
+    # mean is already computed, but we force it to 0 and std to 1 for node types
     mean[NODE_TYPE_START:NODE_TYPE_END] = 0.0
     std_dev[NODE_TYPE_START:NODE_TYPE_END] = 1.0
 
+    # 6. Stress: Standard normalization (already handled by default mean/std calculation)
+    # Just ensure we don't overwrite it with isotropic logic
+    
+    # Broadcastable shapes
     mean_b = mean.view(1, 1, -1)
     std_b = std_dev.view(1, 1, -1)
 
