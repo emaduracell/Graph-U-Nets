@@ -1,6 +1,6 @@
 data:
   include_mesh_pos: True
-  normalization_method: "physics" # 'standard' or 'physics'
+  normalization_method: "standard" # 'standard' or 'physics'
   max_trajs: 100
   tfrecord_path: "raw_data/train.tfrecord"
   meta_path: "raw_data/meta.json"

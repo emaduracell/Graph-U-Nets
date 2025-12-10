@@ -6,28 +6,15 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from defplate_dataset import add_w_edges_radius
 from model_entire import GraphUNet_DefPlate
+from data_loader import load_config
 
-# Data paths
-TFRECORD_PATH = "raw_data/train.tfrecord"
-META_PATH = "raw_data/meta.json"
-# Prefer the preprocessed dataset to mirror training
-PREPROCESSED_PATH = "data_standard_True/preprocessed_train.pt"
 OUTPUT_DIR = "simulation_rollout"
-CHECKPOINT_PATH = "gnet_ema_multi.pt"
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
 SPHERE_NODE = 1
-NODE_TYPE_INDEXES = slice(3, 5)
-VELOCITY_INDEXES = slice(5, 8)  # like 5:8
-STRESS_INDEXES = slice(8, 9)  # like 8:9
-
-# Visualization settings  [374,356,302,387] overfit_traj_id: 2
-TRAJ_INDEX = 0
-T_STEP = 1  # time index t (visualize t -> t+1)
-ROLLOUT = True  # if True, run multi-step rollout
-ROLLOUT_STEPS = 5  # maximum number of rollout steps for multi-step visualization
-RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
-ADD_WORLD_EDGES = False
+# Data paths
+TFRECORD_PATH = "raw_data/train.tfrecord"
+META_PATH = "raw_data/meta.json"
 
 
 def make_dynamic_edges_trace(coords, edge_index):
@@ -37,15 +24,15 @@ def make_dynamic_edges_trace(coords, edge_index):
     """
     if edge_index is None:
         return go.Scatter3d()
-        
+
     if isinstance(edge_index, torch.Tensor):
         if edge_index.shape[1] == 0:
-             return go.Scatter3d()
+            return go.Scatter3d()
         src = edge_index[0].cpu().numpy()
         dst = edge_index[1].cpu().numpy()
     else:
         if edge_index.shape[1] == 0:
-             return go.Scatter3d()
+            return go.Scatter3d()
         src = edge_index[0]
         dst = edge_index[1]
 
@@ -53,13 +40,13 @@ def make_dynamic_edges_trace(coords, edge_index):
     # Vectorized construction for Plotly lines (point, point, None)
     # We can interleave: X[src], X[dst], None
     # shape [E, 3] -> flatten
-    
+
     # We want a sequence: x_s1, x_d1, None, x_s2, x_d2, None ...
     # Create array of shape [3, E] -> [x_src, x_dst, nan]
     # Then transpose to [E, 3] and flatten
-    
+
     nan_vec = np.full(src.shape, None)
-    
+
     for dim, lines_list in enumerate([x_lines, y_lines, z_lines]):
         c_src = coords[src, dim]
         c_dst = coords[dst, dim]
@@ -68,8 +55,8 @@ def make_dynamic_edges_trace(coords, edge_index):
         lines_list.extend(stacked)
 
     return go.Scatter3d(x=x_lines, y=y_lines, z=z_lines, mode='lines',
-        line=dict(color='red', width=4),  # Thick red lines
-        name='World Edges')
+                        line=dict(color='red', width=4),  # Thick red lines
+                        name='World Edges')
 
 
 def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
@@ -113,15 +100,8 @@ class ArgsWrapper:
     pass
 
 
-def load_config(config_path):
-    """Load model and training configuration from YAML file, so that it's consistent."""
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-    return config
-
-
 def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, node_type_true, node_type_pred, title_true,
-                        title_pred, color_mode, dynamic_edges=None):
+                        title_pred, color_mode, dynamic_edges):
     """
     Visualizzazione mesh + heatmap stress o node_type.
     """
@@ -271,7 +251,7 @@ def apply_render_mode(pos_true, pos_pred, stress_true, stress_pred, node_type_tr
 
     Returns filtered copies of inputs with remapped cell indices.
     """
-    mode = RENDER_MODE.lower()
+    mode = render_mode.lower()
     if mode == "all":
         return pos_true, pos_pred, stress_true, stress_pred, node_type_true, node_type_pred, cells
 
@@ -307,7 +287,8 @@ def apply_render_mode(pos_true, pos_pred, stress_true, stress_pred, node_type_tr
 
 # MULTI-STEP ROLLOUT (USING VELOCITY PREDICTIONS)
 
-def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
+def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_idxs, stress_idxs, node_type_idxs,
+            world_pos_idxs, add_world_edges):
     """
     Autoregressive rollout that:
       - predicts plate velocities + stresses,
@@ -367,19 +348,19 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
     stress_pred_list = []
     node_type_pred_list = []
     rollout_error_list = []
-    base_A = A.clone() # Keep the static mesh safe
-    dynamic_edges_list = [] # Store edges for viz
+    base_A = A.clone()  # Keep the static mesh safe
+    dynamic_edges_list = []  # Store edges for viz
     for k in range(steps):
         # Generate world edges for the current predicted state
         # using the mesh-space positions if relevant, or current physical positions?
         # The paper says world edges are based on spatial proximity in world space.
         # radius=0.03 from paper for deforming plate
-        if ADD_WORLD_EDGES:
+        if add_world_edges:
             A_dynamic, dyn_edges = add_w_edges_radius(base_A, node_type, p_hat, radius=0.03)
         else:
             A_dynamic = base_A
             dyn_edges = None
-            
+
         # print(f"dyn_edges={dyn_edges.shape}")
         dynamic_edges_list.append(dyn_edges)
         # ======================================================
@@ -393,8 +374,8 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
         stress_norm = pred[:, 3].unsqueeze(-1)  # [N,1]
 
         # Denormalize predicted velocity & stress (v_hat_k, sigma_hat_k)
-        vel_pred = vel_norm * std_vec[VELOCITY_INDEXES] + mean_vec[VELOCITY_INDEXES]  # [N,3]
-        stress_pred = stress_norm * std_vec[STRESS_INDEXES] + mean_vec[STRESS_INDEXES]  # [N,1]
+        vel_pred = vel_norm * std_vec[vel_idxs] + mean_vec[vel_idxs]  # [N,3]
+        stress_pred = stress_norm * std_vec[stress_idxs] + mean_vec[stress_idxs]  # [N,1]
 
         # ======================================================
         # 2) p_hat_{k+1} from p_hat_k + v_hat_k (ONLY deformables)
@@ -418,8 +399,8 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
 
         gt_phys_step = gt_norm_step * std_vec + mean_vec  # [N,F]
         p_rigid_gt = gt_phys_step[:, :3]  # [N,3]
-        v_rigid_gt = gt_phys_step[:, VELOCITY_INDEXES]  # [N,3]
-        s_rigid_gt = gt_phys_step[:, STRESS_INDEXES]  # [N,1]
+        v_rigid_gt = gt_phys_step[:, vel_idxs]  # [N,3]
+        s_rigid_gt = gt_phys_step[:, stress_idxs]  # [N,1]
 
         # drive rigid nodes with GT
         p_hat_next[rigid_mask] = p_rigid_gt[rigid_mask]
@@ -447,10 +428,12 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
         # 6) Build physical features X_{k+1} from (p_hat_{k+1}, v_hat_k+rigid/border overrides)
         # ==========================================================================================
         X_next_phys = torch.zeros_like(current_phys)
-        X_next_phys[:, :3] = p_hat_next  # positions
-        X_next_phys[:, NODE_TYPE_INDEXES] = node_type_onehot  # node type one-hot
-        X_next_phys[:, VELOCITY_INDEXES] = vel_pred  # velocity field
-        X_next_phys[:, STRESS_INDEXES] = stress_next  # stress
+        X_next_phys[:, world_pos_idxs] = p_hat_next
+        if world_pos_idxs.start > 0:
+            X_next_phys[:, :world_pos_idxs.start] = current_phys[:, :world_pos_idxs.start]
+        X_next_phys[:, node_type_idxs] = node_type_onehot  # node type one-hot
+        X_next_phys[:, vel_idxs] = vel_pred  # velocity field
+        X_next_phys[:, stress_idxs] = stress_next  # stress
 
         # Re-normalize for next model input (graph at time k+1)
         current_phys = X_next_phys
@@ -464,21 +447,22 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
 
 # MAIN VISUALIZATION LOGIC
 
-def main():
+def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, dim_in, render_mode, rollout_steps,
+         traj_idx, t_step, rollout_set, preprocessed_path, add_world_edges, checkpoint_path):
     # ---------------------- LOAD DATA ----------------------
     print("Loading trajectory...")
     # Prefer preprocessed data (same as training); fall back to raw TFRecord if missing
-    if os.path.exists(PREPROCESSED_PATH):
-        list_of_trajs = torch.load(PREPROCESSED_PATH)
-        if TRAJ_INDEX >= len(list_of_trajs):
-            raise ValueError(f"Requested TRAJ_INDEX={TRAJ_INDEX} but only {len(list_of_trajs)} trajectories in "
-                             f"{PREPROCESSED_PATH}")
+    if os.path.exists(preprocessed_path):
+        list_of_trajs = torch.load(preprocessed_path)
+        if traj_idx >= len(list_of_trajs):
+            raise ValueError(f"Requested TRAJ_INDEX={traj_idx} but only {len(list_of_trajs)} trajectories in "
+                             f"{preprocessed_path}")
         # Keep only what we need to avoid extra host->device transfers
-        list_of_trajs = list_of_trajs[:TRAJ_INDEX + 1]
-        print(f"Loaded {len(list_of_trajs)} preprocessed trajectories from {PREPROCESSED_PATH}")
+        list_of_trajs = list_of_trajs[:traj_idx + 1]
+        print(f"Loaded {len(list_of_trajs)} preprocessed trajectories from {preprocessed_path}")
     else:
-        raise ValueError(f"Preprocessed data not found at {PREPROCESSED_PATH}")
-    traj = list_of_trajs[TRAJ_INDEX]
+        raise ValueError(f"Preprocessed data not found at {preprocessed_path}")
+    traj = list_of_trajs[traj_idx]
 
     A = traj["A"]  # [N,N]
     X_seq_norm = traj["X_seq_norm"]  # [T,N,F]
@@ -496,7 +480,7 @@ def main():
 
     # ---------------------- SELECT TIME STEP ----------------------
     T = X_seq_norm.shape[0]
-    t = T_STEP
+    t = t_step
     if not (0 <= t < T - 1):
         raise ValueError(f"t must be in [0, {T - 2}]")
 
@@ -527,7 +511,7 @@ def main():
     dim_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
     model = GraphUNet_DefPlate(dim_in, 3, 1, myargs).to(device)
-    state = torch.load(CHECKPOINT_PATH, map_location=device)
+    state = torch.load(checkpoint_path, map_location=device)
 
     # Backwards compatibility: old checkpoints used "s_gcn" instead of "start_gcn"
     if "s_gcn.proj.weight" in state:
@@ -542,11 +526,10 @@ def main():
     mean_vec = mean[0, 0]
     std_vec = std[0, 0]
 
-    coords_true = X_tp_norm[:, :3] * std_vec[:3] + mean_vec[:3]  # [N,3]
+    coords_true = X_tp_norm[:, :3] * std_vec[:3] + mean_vec[:3]
     pos_true = coords_true.cpu().numpy()
 
-    stress_true = X_tp_norm[:, STRESS_INDEXES] * std_vec[STRESS_INDEXES] + mean_vec[
-        STRESS_INDEXES]  # [N,1] (von Mises stress)
+    stress_true = X_tp_norm[:, stress_idxs] * std_vec[stress_idxs] + mean_vec[stress_idxs]
     stress_true = stress_true.cpu().numpy().squeeze(-1)
 
     # Use rollout with 1 step to integrate predicted velocities
@@ -559,6 +542,11 @@ def main():
         t0=t,
         steps=1,
         node_type=node_type,
+        vel_idxs=vel_idxs,
+        stress_idxs=stress_idxs,
+        node_type_idxs=node_type_idxs,
+        world_pos_idxs=world_pos_idxs,
+        add_world_edges=add_world_edges
     )
 
     pos_pred = coords_pred_list[0]
@@ -577,19 +565,19 @@ def main():
         pos_true, pos_pred, stress_true, stress_pred, node_type_true, node_type_pred, cells
     )
 
-    if not ROLLOUT:
+    if not rollout_set:
         # Compute edges for the single step state (using pos_pred as the "current" state logic, or pos_true?)
         # Usually we visualize the prediction state's dynamic edges.
         # But if we want to see what edges WOULD be there, we can compute them on pos_pred.
-        
+
         # We need tensors for add_edges
         base_A_tensor = A
         node_type_tensor = node_type
         # pos_pred is numpy, convert back to tensor for edge computation or use the tensor from rollout
         # coords_pred_list[0] was p_hat_next (tensor)
         pos_pred_tensor = torch.tensor(pos_pred, device=device, dtype=torch.float32)
-        
-        if ADD_WORLD_EDGES:
+
+        if add_world_edges:
             _, dynamic_edges_single = add_w_edges_radius(base_A_tensor, node_type_tensor, pos_pred_tensor, radius=0.03)
         else:
             dynamic_edges_single = None
@@ -610,7 +598,7 @@ def main():
         return
 
     # ---------------------- MULTI-STEP ROLLOUT ----------------------
-    steps = min(ROLLOUT_STEPS, T - 1 - t)
+    steps = min(rollout_steps, T - 1 - t)
     print(f"\nPerforming {steps}-step rollout...")
 
     coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list, dynamic_edges_list = rollout(
@@ -622,7 +610,11 @@ def main():
         t0=t,
         steps=steps,
         node_type=node_type,
-    )
+        vel_idxs=vel_idxs,
+        stress_idxs=stress_idxs,
+        node_type_idxs=node_type_idxs,
+        world_pos_idxs=world_pos_idxs,
+        add_world_edges=add_world_edges)
 
     # ---- visualize each step ----
     for k in range(steps):
@@ -637,8 +629,8 @@ def main():
         coords_true = coords_true.cpu().numpy()
 
         # Ground-truth von Mises stress at this step
-        stress_true_norm = X_tp_k_norm[:, STRESS_INDEXES]
-        stress_true = (stress_true_norm * std_vec[STRESS_INDEXES] + mean_vec[STRESS_INDEXES]).cpu().numpy().squeeze(-1)
+        stress_true_norm = X_tp_k_norm[:, stress_idxs]
+        stress_true = (stress_true_norm * std_vec[stress_idxs] + mean_vec[stress_idxs]).cpu().numpy().squeeze(-1)
 
         node_type_true = node_type_np
 
@@ -685,4 +677,31 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Visualization settings  [374,356,302,387] overfit_traj_id: 2
+    traj_idx = 0
+    t_step = 4  # time index t (visualize t -> t+1)
+    rollout_set = False  # if True, run multi-step rollout
+    rollout_steps = 5  # maximum number of rollout steps for multi-step visualization
+    render_mode = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
+    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
+    config = load_config(config_path)
+    preprocessed_path = config['training']['datapath']
+    add_world_edges = config['training']['add_world_edges']
+    checkpoint_path = (config['training']['model_path'] + "model_" + preprocessed_path.rsplit("/", 1)[0])
+    if "True" in preprocessed_path:
+        mesh_pos_idxs = slice(0, 3)
+        world_pos_idxs = slice(3, 6)
+        node_type_idxs = slice(6, 8)
+        vel_idxs = slice(8, 11)
+        stress_idxs = slice(11, 12)
+        dim_in = 12  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1)
+    else:
+        mesh_pos_idxs = None
+        world_pos_idxs = slice(0, 3)
+        node_type_idxs = slice(3, 5)
+        vel_idxs = slice(5, 8)
+        stress_idxs = slice(8, 9)
+        dim_in = 9  # world_pos (3) + node_type (2) + vel (3) + stress (1)
+
+    main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, dim_in, render_mode, rollout_steps,
+         traj_idx, t_step, rollout_set, preprocessed_path, add_world_edges, checkpoint_path)

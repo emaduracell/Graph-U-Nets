@@ -215,7 +215,7 @@ class MGNTrainer:
             self.optimizer.step()
 
 
-@hydra.main(version_base="1.3", config_path="conf", config_name="config")
+@hydra.main(,,,,,
 def main(cfg: DictConfig) -> None:
     # initialize distributed manager
     DistributedManager.initialize()

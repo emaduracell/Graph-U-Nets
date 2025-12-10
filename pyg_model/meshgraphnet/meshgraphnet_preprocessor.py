@@ -11,7 +11,7 @@ from deforming_plate_dataset import DeformingPlateDataset
 from helpers import add_world_edges
 
 
-@hydra.main(version_base="1.3", config_path="conf", config_name="config")
+@hydra.main(,,,,,
 def main(cfg: DictConfig):
     """
     Creates a distributed preprocessor

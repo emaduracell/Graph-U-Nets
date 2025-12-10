@@ -2,15 +2,24 @@ import torch
 import os
 from data_loader import load_all_trajectories, load_config
 
-def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs, MESH_POS_INDEXES, WORLD_POS_INDEXES,
-                        NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES, include_mesh_pos, norm_method):
+def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs, mesh_pos_idxs, world_pos_idxs,
+                        node_type_idxs, velocity_idxs, stress_idxs, include_mesh_pos, norm_method):
     """
-    Load trajectories from TFRecord, preprocess them, and save to disk.
-    
-    :param tfrecord_path: Path to the TFRecord file
-    :param meta_path: Path to meta.json
-    :param output_dir: Directory to save preprocessed data
-    :param max_trajs: Maximum number of trajectories to load (None for all)
+    Loads data using data_loader.py, then saves torch files for data and metadata in proper directory
+
+    :param tfrecord_path:
+    :param meta_path:
+    :param output_dir:
+    :param max_trajs:
+    :param mesh_pos_idxs:
+    :param world_pos_idxs:
+    :param node_type_idxs:
+    :param velocity_idxs:
+    :param stress_idxs:
+    :param include_mesh_pos:
+    :param norm_method:
+
+    :return:
     """
     print("\n" + "=" * 60)
     print(" PREPROCESSING DATA")
@@ -23,8 +32,8 @@ def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs, MESH_PO
     # Load and preprocess all trajectories
     # Note: Trajectories are loaded in deterministic sequential order from TFRecord
     # and will be saved maintaining this order (traj_id 0, 1, 2, ...)
-    list_of_trajs = load_all_trajectories(tfrecord_path, meta_path, max_trajs, MESH_POS_INDEXES, WORLD_POS_INDEXES,
-                                          NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES, include_mesh_pos,
+    list_of_trajs = load_all_trajectories(tfrecord_path, meta_path, max_trajs, mesh_pos_idxs, world_pos_idxs,
+                                          node_type_idxs, velocity_idxs, stress_idxs, include_mesh_pos,
                                           norm_method)
 
     # Create output directory if it doesn't exist
@@ -33,7 +42,7 @@ def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs, MESH_PO
     # Save preprocessed trajectories
     output_path = os.path.join(output_dir, "preprocessed_train.pt")
     torch.save(list_of_trajs, output_path)
-    print(f"\n✓ Saved {len(list_of_trajs)} preprocessed trajectories to: {output_path}")
+    print(f"\n Saved {len(list_of_trajs)} preprocessed trajectories to: {output_path}")
 
     # Save metadata for reference
     if len(list_of_trajs) > 0:
@@ -50,7 +59,7 @@ def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs, MESH_PO
         }
         metadata_path = os.path.join(output_dir, "preprocessed_metadata.pt")
         torch.save(metadata, metadata_path)
-        print(f"✓ Saved metadata to: {metadata_path}")
+        print(f" Saved metadata to: {metadata_path}")
 
         print("\n" + "=" * 60)
         print(" DATASET SUMMARY")
@@ -66,12 +75,27 @@ def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs, MESH_PO
     return output_path
 
 
-def main(tfrecord_path, meta_path, max_trajs, output_dir, MESH_POS_INDEXES, WORLD_POS_INDEXES, NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES, include_mesh_pos,
-        norm_method):
-    """Run preprocessing with global configuration constants."""
-    preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs,
-                        MESH_POS_INDEXES, WORLD_POS_INDEXES, NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES,
-                        include_mesh_pos, norm_method)
+def main(tfrecord_path, meta_path, max_trajs, output_dir, mesh_pos_idxs, world_pos_idxs, node_type_idxs, velocity_idxs,
+         stress_idxs, include_mesh_pos, norm_method):
+    """
+    access point function to generate data
+
+    :param tfrecord_path:
+    :param meta_path:
+    :param max_trajs:
+    :param output_dir:
+    :param mesh_pos_idxs:
+    :param world_pos_idxs:
+    :param node_type_idxs:
+    :param velocity_idxs:
+    :param stress_idxs:
+    :param include_mesh_pos:
+    :param norm_method:
+
+    :return: nothing
+    """
+    preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs, mesh_pos_idxs, world_pos_idxs,
+                        node_type_idxs, velocity_idxs, stress_idxs, include_mesh_pos, norm_method)
 
 
 if __name__ == "__main__":

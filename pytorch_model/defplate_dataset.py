@@ -106,6 +106,23 @@ class DefPlateDataset(Dataset):
     total_comp_time = 0.0
     total_comp_calls = 0
 
+    def add_w_edges(self, base_A, node_types, pos_t):
+        # Add world edges
+        if self.add_world_edges == "radius":
+            A_dynamic, dynamic_edges = add_w_edges_radius(base_A=base_A, node_types=node_types, pos_t=pos_t,
+                                                          radius=self.radius)
+        elif self.add_world_edges == "neighbours":
+            A_dynamic, dynamic_edges = add_w_edges_neigh(base_A=base_A, node_types=node_types, pos_t=pos_t,
+                                                         k=self.k_neighb)
+        elif self.add_world_edges == "None":
+            A_dynamic = base_A
+            dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=base_A.device)
+        else:
+            raise ValueError(f"f[defplate_dataset] Wrong add world edges param specified = {self.add_world_edges}"
+                             f"choose either 'None' | 'neighbours' | 'radius'")
+
+        return A_dynamic, dynamic_edges
+
     def __init__(self, list_of_trajs, add_world_edges, k_neighb, radius, world_pos_idxs):
         """
         Construct a dataset from a list of trajectories objects.
@@ -156,34 +173,19 @@ class DefPlateDataset(Dataset):
         # time tracking
         time_start = time.time()
 
+        time_start = time.time()
         # Compute Dynamic Adjacency
         pos_t = X_t[:, self.world_pos_idxs]
+        # Time tracking ends
+        compute_duration = time.time() - time_start
 
-        # Add world edges
-        if self.add_world_edges == "radius":
-            A_dynamic, dynamic_edges = add_w_edges_radius(base_A=base_A, node_types=node_types, pos_t=pos_t,
-                                                          radius=self.radius)
-            self.total_comp_calls += 1
-            time_end = time.time()
-            self.total_comp_time += time_start - time_end
-        elif self.add_world_edges == "neighbours":
-            A_dynamic, dynamic_edges = add_w_edges_neigh(base_A=base_A, node_types=node_types, pos_t=pos_t,
-                                                          k=self.k_neighb)
-            self.total_comp_calls += 1
-            time_end = time.time()
-            self.total_comp_time += time_start - time_end
-        elif self.add_world_edges is None:
-            A_dynamic = base_A
-            dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=base_A.device)
-        else:
-            raise ValueError(f"f[defplate_dataset] Wrong add world edges param specified = {self.add_world_edges}"
-                             f"choose either 'None' | 'neighbours' | 'radius'")
+        A_dynamic, dynamic_edges = self.add_w_edges(base_A, node_types, pos_t)
 
         # Pass all inputs to model: mesh_pos, world_pos, node_type, vel, stress
         X_t_input = X_t
 
         return (A_dynamic, X_t_input, X_tp1, traj["mean"], traj["std"], traj["cells"], node_types, dynamic_edges,
-            traj_id, t)
+            traj_id, t, compute_duration)
 
 
 def collate_unet(batch):
@@ -205,8 +207,9 @@ def collate_unet(batch):
     node_types_list = []
     traj_id_list = []
     time_idx_list = []
+    compute_times_list = []
 
-    for A, X_t, X_tp1, mean, std, cells, node_type, dyn_edges, traj_id, time_idx in batch:
+    for A, X_t, X_tp1, mean, std, cells, node_type, dyn_edges, traj_id, time_idx, comp_time in batch:
         adjacency_mat_list.append(A)
         X_t_list.append(X_t)
         X_tp1_list.append(X_tp1)
@@ -217,6 +220,7 @@ def collate_unet(batch):
         traj_id_list.append(traj_id)
         time_idx_list.append(time_idx)
         dynamic_edges_list.append(dyn_edges)
+        compute_times_list.append(comp_time)
 
     return (adjacency_mat_list, X_t_list, X_tp1_list, mean_list, std_list, cells_list,
-        node_types_list, dynamic_edges_list, traj_id_list, time_idx_list)
+        node_types_list, dynamic_edges_list, traj_id_list, time_idx_list, compute_times_list)
