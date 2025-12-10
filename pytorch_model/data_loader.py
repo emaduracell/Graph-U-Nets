@@ -12,6 +12,7 @@ WORLD_POS_INDEXES = slice(3, 6)
 VELOCITY_INDEXES = slice(8, 11)
 STRESS_INDEXES = slice(11, 12)
 MESH_POS_INDEXES = slice(0, 3)
+VELOCITY_MEAN = 0.0
 
 def _cast_to_bytes(value):
     """
@@ -313,31 +314,43 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
     mean = sum_elements / element_num
     
     # Force velocity mean to 0
-    mean[VELOCITY_INDEXES] = 0.0
+    mean[VELOCITY_INDEXES] = VELOCITY_MEAN
     
-    # Calculate std dev
-    std_acc = torch.zeros_like(mean)
+    # 2. Compute Global Standard Deviation
+    # We need to re-iterate to calculate variance correctly
+    accumulated_variance = torch.zeros_like(mean)
     for traj in list_of_trajs:
         X = traj['X_seq_norm']
-        std_acc += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
-    std_dev = torch.sqrt(std_acc / (element_num - 1))
+        # For velocity, since we forced mean=0, this computes sum(v^2), which leads to RMS
+        accumulated_variance += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
+    # Standard Deviation (or RMS for velocity)
+    std_dev = torch.sqrt(accumulated_variance / (element_num - 1))
 
-    # 2. Isotropic scaling for Mesh Position
-    max_std_mesh = std_dev[MESH_POS_INDEXES].max()
-    std_dev[MESH_POS_INDEXES] = max_std_mesh
+    # B. World Position: Isotropic Std across x, y, z
+    # Since we centered positions per-frame, the mean is ~0.
+    pos_variances = accumulated_variance[WORLD_POS_INDEXES]
+    pos_std_isotropic = torch.sqrt(pos_variances.sum() / ((element_num - 1) * 3))
+    std_dev[WORLD_POS_INDEXES] = pos_std_isotropic
 
-    # 3. Isotropic scaling for World Position
-    max_std_pos = std_dev[WORLD_POS_INDEXES].max()
-    std_dev[WORLD_POS_INDEXES] = max_std_pos
+    # C. Mesh Position: Isotropic Std across x, y, z
+    mesh_variances = accumulated_variance[MESH_POS_INDEXES]
+    mesh_std_isotropic = torch.sqrt(mesh_variances.sum() / ((element_num - 1) * 3))
+    std_dev[MESH_POS_INDEXES] = mesh_std_isotropic
 
     # 4. Isotropic scaling for Velocity
-    max_std_vel = std_dev[VELOCITY_INDEXES].max()
-    std_dev[VELOCITY_INDEXES] = max_std_vel
+    # max_std_vel = std_dev[VELOCITY_INDEXES].max()
+    # std_dev[VELOCITY_INDEXES] = max_std_vel
+    vel_variances = std_dev[VELOCITY_INDEXES] # Shape [3]
+    # Sum of squared errors for all 3 components / (Total Elements * 3)
+    # Note: element_num is N*T. The total count for 3 components is element_num * 3
+    vel_rms = torch.sqrt(vel_variances.sum() / ((element_num - 1) * 3))
+    std_dev[VELOCITY_INDEXES] = vel_rms
     
     # 5. Node Type: keep one-hot (no normalization)
     # mean is already computed, but we force it to 0 and std to 1 for node types
     mean[NODE_TYPE_START:NODE_TYPE_END] = 0.0
     std_dev[NODE_TYPE_START:NODE_TYPE_END] = 1.0
+
 
     # 6. Stress: Standard normalization (already handled by default mean/std calculation)
     # Just ensure we don't overwrite it with isotropic logic
