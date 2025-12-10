@@ -337,7 +337,20 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
     if current_norm.dim() == 3:
         current_norm = current_norm[0]
 
-    current_phys = current_norm * std_vec + mean_vec  # [N,F]
+    # --- NEW: Append next-step velocity for kinematic nodes (from GROUND TRUTH at t0+1) ---
+    # For the very first step (k=0), we need v_rigid^{t0+1}.
+    gt_norm_next_initial = X_seq_norm[t0 + 1].to(device)
+    if gt_norm_next_initial.dim() == 3:
+        gt_norm_next_initial = gt_norm_next_initial[0]
+    
+    v_next_norm_initial = gt_norm_next_initial[:, vel_idxs]
+    kinematic_vel_input_initial = torch.zeros_like(v_next_norm_initial)
+    kinematic_vel_input_initial[rigid_mask] = v_next_norm_initial[rigid_mask]
+    
+    # Concatenate to initial current_norm
+    current_norm = torch.cat([current_norm, kinematic_vel_input_initial], dim=-1)
+    
+    current_phys = current_norm[:, :-3] * std_vec + mean_vec  # [N,F] (Exclude the appended kinematic vel)
     # This is p_hat_0 := p_0 (ground truth at t0)
     p_hat = current_phys[:, :3].clone()  # [N,3]
 
@@ -439,10 +452,42 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
         current_phys = X_next_phys
         current_norm = (X_next_phys - mean_vec) / std_vec
 
+        # --- NEW: Append next-step velocity for kinematic nodes (from GROUND TRUTH) ---
+        # In rollout, we must use the FUTURE ground-truth velocity of the kinematic nodes to predict step k+1.
+        # This mirrors what we did in DefPlateDataset.__getitem__.
+
+        # Get next step ground truth for kinematic velocity (at t0 + 1 + k + 1)
+        # Note: We are predicting state k+1. To predict k+2, we would need velocity at k+2.
+        # Actually, wait. The model at step 'k' predicts 'k+1'. It needs input at 'k'.
+        # The input at 'k' includes "next step velocity" v^{k+1} for kinematic nodes.
+        # So we need v_rigid^{k+1} (normalized) to be concatenated to current_norm.
+
+        # We already have `gt_norm_step` which corresponds to time t0 + 1 + k. This is the TARGET state of the current step.
+        # Wait, the loop runs for `steps`.
+        # At iteration k=0:
+        #   Input: state at t0.
+        #   Target: state at t0+1.
+        #   We need v_rigid^{t0+1} as extra input.
+        #   `gt_norm_step` loaded above is X_seq_norm[t0 + 1 + k]. For k=0, this is t0+1.
+        #   So `gt_norm_step` contains the velocity we need!
+
+        # Extract normalized velocity from the target/next-step GT
+        v_next_norm_all = gt_norm_step[:, vel_idxs] # [N, 3]
+
+        # Mask: keep only rigid (sphere) nodes, zero elsewhere
+        kinematic_vel_input = torch.zeros_like(v_next_norm_all)
+        kinematic_vel_input[rigid_mask] = v_next_norm_all[rigid_mask]
+
+        # Concatenate to current_norm
+        # current_norm shape: [N, F]
+        # kinematic_vel_input shape: [N, 3]
+        current_norm = torch.cat([current_norm, kinematic_vel_input], dim=-1)
+
         # Advance p_hat_k -> p_hat_{k+1}
         p_hat = p_hat_next
 
     return coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list, dynamic_edges_list
+
 
 
 # MAIN VISUALIZATION LOGIC
@@ -694,14 +739,14 @@ if __name__ == "__main__":
         node_type_idxs = slice(6, 8)
         vel_idxs = slice(8, 11)
         stress_idxs = slice(11, 12)
-        dim_in = 12  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1)
+        dim_in = 12 + 3  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1) + kinematic_vel_tp1
     else:
         mesh_pos_idxs = None
         world_pos_idxs = slice(0, 3)
         node_type_idxs = slice(3, 5)
         vel_idxs = slice(5, 8)
         stress_idxs = slice(8, 9)
-        dim_in = 9  # world_pos (3) + node_type (2) + vel (3) + stress (1)
+        dim_in = 9 + 3  # world_pos (3) + node_type (2) + vel (3) + stress (1) + kinematic_vel_tp1
 
     main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, dim_in, render_mode, rollout_steps,
          traj_idx, t_step, rollout_set, preprocessed_path, add_world_edges, checkpoint_path)

@@ -321,12 +321,12 @@ def train_gnet(device, num_workers, pin_memory):
         world_pos_idxs = slice(3, 6)
         velocity_idxs = slice(8, 11)
         stress_idxs = slice(11, 12)
-        dim_in = 12  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1)
+        dim_in = 12 + 3  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1) + kinematic_vel_tp1 (3)
     else:
         world_pos_idxs = slice(0, 3)
         velocity_idxs = slice(5, 8)
         stress_idxs = slice(8, 9)
-        dim_in = 9 # world_pos (3) + node_type (2) + vel (3) + stress (1)
+        dim_in = 9 + 3 # world_pos (3) + node_type (2) + vel (3) + stress (1) + kinematic_vel_tp1 (3)
 
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
@@ -364,7 +364,7 @@ def train_gnet(device, num_workers, pin_memory):
     # TODO FOR 80-20 SPLIT
     # Build dataset from these trajectories
     dataset = DefPlateDataset(list_of_trajs, add_world_edges=add_world_edges, k_neighb=k_neighb, radius=radius,
-                              world_pos_idxs=world_pos_idxs)
+                              world_pos_idxs=world_pos_idxs, velocity_idxs=velocity_idxs)
     print(f"Total training pairs (X_t, X_t+1): {len(dataset)}")
     # Random 80/20 split and then load data
     total = len(dataset)

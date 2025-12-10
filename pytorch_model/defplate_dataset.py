@@ -123,7 +123,7 @@ class DefPlateDataset(Dataset):
 
         return A_dynamic, dynamic_edges
 
-    def __init__(self, list_of_trajs, add_world_edges, k_neighb, radius, world_pos_idxs):
+    def __init__(self, list_of_trajs, add_world_edges, k_neighb, radius, world_pos_idxs, velocity_idxs):
         """
         Construct a dataset from a list of trajectories objects.
 
@@ -143,6 +143,7 @@ class DefPlateDataset(Dataset):
         self.k_neighb = k_neighb
         self.radius = radius
         self.world_pos_idxs = world_pos_idxs
+        self.velocity_idxs = velocity_idxs
 
         for traj_id, traj in enumerate(list_of_trajs):
             X_seq = traj["X_seq_norm"]
@@ -182,7 +183,18 @@ class DefPlateDataset(Dataset):
         A_dynamic, dynamic_edges = self.add_w_edges(base_A, node_types, pos_t)
 
         # Pass all inputs to model: mesh_pos, world_pos, node_type, vel, stress
-        X_t_input = X_t
+        # New: Add next-step velocity for kinematic nodes (SPHERE_NODE) as input
+        # Extract velocity at t+1 (already normalized)
+        v_tp1 = X_tp1[:, self.velocity_idxs]
+        # Identify sphere nodes
+        sphere_mask = (node_types == SPHERE_NODE)
+        # Create feature initialized to 0
+        kinematic_vel = torch.zeros_like(v_tp1)
+        # Fill only sphere nodes
+        kinematic_vel[sphere_mask] = v_tp1[sphere_mask]
+        
+        # Concatenate to X_t
+        X_t_input = torch.cat([X_t, kinematic_vel], dim=-1)
 
         return (A_dynamic, X_t_input, X_tp1, traj["mean"], traj["std"], traj["cells"], node_types, dynamic_edges,
             traj_id, t, compute_duration)
