@@ -27,6 +27,7 @@ T_STEP = 30  # time index t (visualize t -> t+1)
 ROLLOUT = False  # if True, run multi-step rollout
 ROLLOUT_STEPS = 10  # maximum number of rollout steps for multi-step visualization
 RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
+ADD_WORLD_EDGES = True
 
 
 def make_dynamic_edges_trace(coords, edge_index):
@@ -373,7 +374,12 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
         # using the mesh-space positions if relevant, or current physical positions?
         # The paper says world edges are based on spatial proximity in world space.
         # radius=0.03 from paper for deforming plate
-        A_dynamic, dyn_edges = add_edges(base_A, node_type, p_hat, radius=0.03)
+        if ADD_WORLD_EDGES:
+            A_dynamic, dyn_edges = add_edges(base_A, node_type, p_hat, radius=0.03)
+        else:
+            A_dynamic = base_A
+            dyn_edges = None
+            
         # print(f"dyn_edges={dyn_edges.shape}")
         dynamic_edges_list.append(dyn_edges)
         # ======================================================
@@ -583,7 +589,10 @@ def main():
         # coords_pred_list[0] was p_hat_next (tensor)
         pos_pred_tensor = torch.tensor(pos_pred, device=device, dtype=torch.float32)
         
-        _, dynamic_edges_single = add_edges(base_A_tensor, node_type_tensor, pos_pred_tensor, radius=0.03)
+        if ADD_WORLD_EDGES:
+            _, dynamic_edges_single = add_edges(base_A_tensor, node_type_tensor, pos_pred_tensor, radius=0.03)
+        else:
+            dynamic_edges_single = None
 
         visualize_mesh_pair(
             pos_true=pos_true,

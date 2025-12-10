@@ -11,6 +11,10 @@ def add_edges(base_A, node_types, pos_t, radius):
     """
     Computes A_t dynamically using radius search.
     Excludes existing mesh edges (base_A) and self-loops.
+    
+    Returns:
+        A_norm: Normalized adjacency matrix (including mesh edges + world edges + self loops)
+        dynamic_edges: Edge list of ONLY the newly added world edges (2, E_world)
     """
     # Ensure devices match (likely CPU in Dataset)
     if base_A.device != pos_t.device:
@@ -45,6 +49,7 @@ def add_edges(base_A, node_types, pos_t, radius):
     A_norm = A_combined / row_sums
 
     # 7. Extract edge list for world edges (for return)
+    # We want (source, target) pairs for world edges only
     dynamic_edges = torch.nonzero(binary_world, as_tuple=False).t()
     if dynamic_edges.numel() == 0:
          dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=pos_t.device)
@@ -56,16 +61,19 @@ class DefPlateDataset(Dataset):
     total_comp_time = 0.0
     total_comp_calls = 0
 
-    def __init__(self, list_of_trajs):
+    def __init__(self, list_of_trajs, add_world_edges=True):
         """
         Construct a dataset from a list of trajectories objects.
 
         :param list_of_trajs: List
             a list where each item has (A, X_seq_norm, mean, std, cells, node_type)
+        :param add_world_edges: bool
+            whether to add world edges dynamically based on radius search
         """
         self.samples = []
         # Store the list of trajectories
         self.trajs = list_of_trajs
+        self.add_world_edges = add_world_edges
 
         for traj_id, traj in enumerate(list_of_trajs):
             X_seq = traj["X_seq_norm"]
@@ -107,7 +115,12 @@ class DefPlateDataset(Dataset):
         pos_t = X_t[:, MESH_POS_INDEXES]
 
         # This function adds edges between the ball and the plate based on proximity
-        A_dynamic, dynamic_edges = add_edges(base_A=base_A, node_types=node_types, pos_t=pos_t)
+        if self.add_world_edges:
+            A_dynamic, dynamic_edges = add_edges(base_A=base_A, node_types=node_types, pos_t=pos_t, radius=0.03)
+        else:
+            A_dynamic = base_A
+            dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=base_A.device)
+            
         time_end = time.time()
         self.total_comp_time += time_start - time_end
         self.total_comp_calls += 1
