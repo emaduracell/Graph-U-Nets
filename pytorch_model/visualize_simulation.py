@@ -31,24 +31,44 @@ RENDER_MODE = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_s
 
 def make_dynamic_edges_trace(coords, edge_index):
     """
-    Creates Red Lines for the dynamic interactions between Sphere and Plate.
+    Creates Red Lines for the dynamic interactions (world edges).
+    edge_index: [2, E] tensor or numpy array
     """
-    if edge_index is None or edge_index.shape[1] == 0:
-        print("[visualize_simulation] empty trace")
-        return go.Scatter3d()  # Empty trace
-
-    src = edge_index[0].cpu().numpy()
-    dst = edge_index[1].cpu().numpy()
+    if edge_index is None:
+        return go.Scatter3d()
+        
+    if isinstance(edge_index, torch.Tensor):
+        if edge_index.shape[1] == 0:
+             return go.Scatter3d()
+        src = edge_index[0].cpu().numpy()
+        dst = edge_index[1].cpu().numpy()
+    else:
+        if edge_index.shape[1] == 0:
+             return go.Scatter3d()
+        src = edge_index[0]
+        dst = edge_index[1]
 
     x_lines, y_lines, z_lines = [], [], []
-    for s, d in zip(src, dst):
-        x_lines.extend([coords[s, 0], coords[d, 0], None])
-        y_lines.extend([coords[s, 1], coords[d, 1], None])
-        z_lines.extend([coords[s, 2], coords[d, 2], None])
+    # Vectorized construction for Plotly lines (point, point, None)
+    # We can interleave: X[src], X[dst], None
+    # shape [E, 3] -> flatten
+    
+    # We want a sequence: x_s1, x_d1, None, x_s2, x_d2, None ...
+    # Create array of shape [3, E] -> [x_src, x_dst, nan]
+    # Then transpose to [E, 3] and flatten
+    
+    nan_vec = np.full(src.shape, None)
+    
+    for dim, lines_list in enumerate([x_lines, y_lines, z_lines]):
+        c_src = coords[src, dim]
+        c_dst = coords[dst, dim]
+        # Stack: [E, 3] where cols are src, dst, None
+        stacked = np.stack([c_src, c_dst, nan_vec], axis=1).flatten()
+        lines_list.extend(stacked)
 
     return go.Scatter3d(x=x_lines, y=y_lines, z=z_lines, mode='lines',
         line=dict(color='red', width=4),  # Thick red lines
-        name='Interaction')
+        name='World Edges')
 
 
 def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
@@ -349,8 +369,12 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type):
     base_A = A.clone() # Keep the static mesh safe
     dynamic_edges_list = [] # Store edges for viz
     for k in range(steps):
-        A_dynamic, dyn_edges = add_edges(base_A, node_type, p_hat, k=5)
-        print(f"dyn_edges={dyn_edges}")
+        # Generate world edges for the current predicted state
+        # using the mesh-space positions if relevant, or current physical positions?
+        # The paper says world edges are based on spatial proximity in world space.
+        # radius=0.03 from paper for deforming plate
+        A_dynamic, dyn_edges = add_edges(base_A, node_type, p_hat, radius=0.03)
+        # print(f"dyn_edges={dyn_edges.shape}")
         dynamic_edges_list.append(dyn_edges)
         # ======================================================
         # 1) Predict NORMALIZED velocity + stress
@@ -548,6 +572,19 @@ def main():
     )
 
     if not ROLLOUT:
+        # Compute edges for the single step state (using pos_pred as the "current" state logic, or pos_true?)
+        # Usually we visualize the prediction state's dynamic edges.
+        # But if we want to see what edges WOULD be there, we can compute them on pos_pred.
+        
+        # We need tensors for add_edges
+        base_A_tensor = A
+        node_type_tensor = node_type
+        # pos_pred is numpy, convert back to tensor for edge computation or use the tensor from rollout
+        # coords_pred_list[0] was p_hat_next (tensor)
+        pos_pred_tensor = torch.tensor(pos_pred, device=device, dtype=torch.float32)
+        
+        _, dynamic_edges_single = add_edges(base_A_tensor, node_type_tensor, pos_pred_tensor, radius=0.03)
+
         visualize_mesh_pair(
             pos_true=pos_true,
             pos_pred=pos_pred,
@@ -558,7 +595,8 @@ def main():
             cells=cells_filtered,
             color_mode="stress",  # or "node_type"
             title_true=f"Ground Truth t={t + 1}",
-            title_pred=f"Prediction t={t + 1}"
+            title_pred=f"Prediction t={t + 1}",
+            dynamic_edges=dynamic_edges_single
         )
         return
 
