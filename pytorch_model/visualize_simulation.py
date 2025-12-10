@@ -8,10 +8,10 @@ from defplate_dataset import add_w_edges_radius
 from model_entire import GraphUNet_DefPlate
 
 # Data paths
-TFRECORD_PATH = "data/train.tfrecord"
-META_PATH = "data/meta.json"
+TFRECORD_PATH = "raw_data/train.tfrecord"
+META_PATH = "raw_data/meta.json"
 # Prefer the preprocessed dataset to mirror training
-PREPROCESSED_PATH = "data/preprocessed_train.pt"
+PREPROCESSED_PATH = "data_standard_True/preprocessed_train.pt"
 OUTPUT_DIR = "simulation_rollout"
 CHECKPOINT_PATH = "gnet_ema_multi.pt"
 BOUNDARY_NODE = 3

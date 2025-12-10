@@ -176,7 +176,8 @@ class DefPlateDataset(Dataset):
             A_dynamic = base_A
             dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=base_A.device)
         else:
-            raise ValueError(f"f[defplate_dataset] Wrong add world edges param specified = {self.add_world_edges}")
+            raise ValueError(f"f[defplate_dataset] Wrong add world edges param specified = {self.add_world_edges}"
+                             f"choose either 'None' | 'neighbours' | 'radius'")
 
         # Pass all inputs to model: mesh_pos, world_pos, node_type, vel, stress
         X_t_input = X_t

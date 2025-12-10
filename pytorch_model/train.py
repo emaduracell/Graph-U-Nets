@@ -260,7 +260,7 @@ def train_gnet_ema(device):
     add_world_edges = train_cfg['add_world_edges']
     preprocessed_data_path = train_cfg['datapath']
     random_seed = train_cfg['random_seed']
-    radius = train_cfg['radius']
+    radius = train_cfg['radius_world_edge']
     k_neighb = train_cfg['k_neighb']
     include_mesh_pos = dataconfig['data']['include_mesh_pos']
 
@@ -472,7 +472,8 @@ def train_gnet_ema(device):
                 total_test_stress_loss += stress_loss_batch_avgd
                 total_test_loss += batch_loss.item()
 
-                mae, count = compute_batch_metrics(preds_list, feat_mat_cpu_list_tp1, node_types_cpu)
+                mae, count = compute_batch_metrics(preds_list, feat_mat_cpu_list_tp1, node_types_cpu, VELOCITY_INDEXES,
+                                                   STRESS_INDEXES)
                 total_test_mae += mae
                 total_test_count += count
 

@@ -69,7 +69,7 @@ def preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs, MESH_PO
 def main(tfrecord_path, meta_path, max_trajs, output_dir, MESH_POS_INDEXES, WORLD_POS_INDEXES, NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES, include_mesh_pos,
         norm_method):
     """Run preprocessing with global configuration constants."""
-    preprocess_and_save(tfrecord_path, meta_path, max_trajs, output_dir,
+    preprocess_and_save(tfrecord_path, meta_path, output_dir, max_trajs,
                         MESH_POS_INDEXES, WORLD_POS_INDEXES, NODE_TYPE_INDEXES, VELOCITY_INDEXES, STRESS_INDEXES,
                         include_mesh_pos, norm_method)
 
