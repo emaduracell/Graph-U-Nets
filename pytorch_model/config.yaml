@@ -21,4 +21,4 @@ training:
   random_seed: 42 # Seed for train/test split and any random operations
   overfit_traj_id: 0 # For overfit mode: which trajectory to use (null = use first available)
   overfit_time_idx: [0,1,2,3] # For overfit mode: which time step t to use (null = use all time steps from trajectory) [13, 202, 302, 10, 11, 90, 321, 43]
-
+  add_world_edges: True # whether to add world edges dynamically based on radius search

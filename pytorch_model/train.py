@@ -257,6 +257,7 @@ def train_gnet_ema(device):
     num_train_trajs = train_cfg['num_train_trajs']
     batch_size = train_cfg['batch_size']
     shuffle = train_cfg['shuffle']
+    add_world_edges = train_cfg.get('add_world_edges', True)
     # Set random seed for reproducibility
     random_seed = train_cfg.get('random_seed', 42)
     torch.manual_seed(random_seed)
@@ -294,7 +295,7 @@ def train_gnet_ema(device):
     # TODO SPECIFY WHICH TIME STEPS AND TRAJECTORIES WE'RE TRAINING ONE AND WHICH ONES ARE IN THE TEST SET INSTEAD
 
     # Build dataset from these trajectories
-    dataset = DefPlateDataset(list_of_trajs)
+    dataset = DefPlateDataset(list_of_trajs, add_world_edges=add_world_edges)
     print(f"Total training pairs (X_t, X_t+1): {len(dataset)}")
     # Random 80/20 split and then load data
     total = len(dataset)
