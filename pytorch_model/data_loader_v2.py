@@ -6,6 +6,14 @@ from tfrecord.reader import tfrecord_loader
 NORMAL_NODE = [0, 0]  # value 0 (NORMAL)
 SPHERE_NODE = [1, 0]  # value 1 (SPHERE)
 BOUNDARY_NODE = [0, 1]  # value 3 (BOUNDARY)
+NODE_TYPE_START = 6
+NODE_TYPE_END = 8
+WORLD_POS_INDEXES = slice(3, 6)
+VELOCITY_INDEXES = slice(8, 11)
+STRESS_INDEXES = slice(11, 12)
+MESH_POS_INDEXES = slice(0, 3)
+VELOCITY_MEAN = 0.0
+
 
 def _build_tfrecord_description(meta):
     """
@@ -168,12 +176,20 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
                 f"\n \t type(node_type[0][0])={type(node_type[0][0])}) \n \t len(node_type)={len(node_type)} "
                 f"\n \t len(node_type[0])={len(node_type[0])}")
 
-        # Build feature sequence Feature layout: [pos_x, pos_y, pos_z, node_type, vel_x, vel_y, vel_z, stress]
+        # Build feature sequence Feature layout: [mesh_pos, pos_x, pos_y, pos_z, node_type, vel_x, vel_y, vel_z, stress]
         feats_list = []
         node_type_floatcast = node_type_onehot.astype(np.float32)
 
         for t in range(time_step_dim):
-            feats_t = np.concatenate([world_pos[t], node_type_floatcast, vel[t], stress[t]], axis=-1)
+            # Compute frame centroid for world_pos
+            centroid_world = world_pos[t].mean(axis=0)  # [3]
+            centered_world_pos = world_pos[t] - centroid_world
+            
+            # Compute frame centroid for mesh_pos (static [N, 3])
+            centroid_mesh = mesh_pos.mean(axis=0)
+            centered_mesh_pos = mesh_pos - centroid_mesh
+
+            feats_t = np.concatenate([centered_mesh_pos, centered_world_pos, node_type_floatcast, vel[t], stress[t]], axis=-1)
             feats_list.append(feats_t)
         X_seq = torch.tensor(np.stack(feats_list, axis=0), dtype=torch.float32)
         # print(f"X_seq.shape={X_seq.shape}")
@@ -214,29 +230,43 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         # print(f"Loaded trajectory {traj_idx}")
 
     mean = sum_elements / element_num
-    std_acc = torch.zeros_like(mean)
+
+    # Force velocity mean to 0
+    mean[VELOCITY_INDEXES] = VELOCITY_MEAN
+
+    # 2. Compute Global Standard Deviation
+    # We need to re-iterate to calculate variance correctly
+    accumulated_variance = torch.zeros_like(mean)
     for traj in list_of_trajs:
         X = traj['X_seq_norm']
-        std_acc += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
-    # 1. Calculate independent stats first
-    std_dev = torch.sqrt(std_acc / (element_num - 1))
+        # For velocity, since we forced mean=0, this computes sum(v^2), which leads to RMS
+        accumulated_variance += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
+    # Standard Deviation (or RMS for velocity)
+    std_dev = torch.sqrt(accumulated_variance / (element_num - 1))
 
+    # B. World Position: Isotropic Std across x, y, z
+    # Since we centered positions per-frame, the mean is ~0.
+    pos_variances = accumulated_variance[WORLD_POS_INDEXES]
+    pos_std_isotropic = torch.sqrt(pos_variances.sum() / ((element_num - 1) * 3))
+    std_dev[WORLD_POS_INDEXES] = pos_std_isotropic
 
-    # 2. Find the max sigma for Position (cols 0,1,2)
-    max_std_pos = std_dev[0:3].max()
-    # Apply to all position columns
-    std_dev[0:3] = max_std_pos
+    # C. Mesh Position: Isotropic Std across x, y, z
+    mesh_variances = accumulated_variance[MESH_POS_INDEXES]
+    mesh_std_isotropic = torch.sqrt(mesh_variances.sum() / ((element_num - 1) * 3))
+    std_dev[MESH_POS_INDEXES] = mesh_std_isotropic
 
-    # 3. Find the max sigma for Velocity (cols 5,6,7)
-    max_std_vel = std_dev[5:8].max()
-    # Apply to all velocity columns
-    std_dev[5:8] = max_std_vel
+    # 4. Isotropic scaling for Velocity
+    # max_std_vel = std_dev[VELOCITY_INDEXES].max()
+    # std_dev[VELOCITY_INDEXES] = max_std_vel
+    vel_variances = std_dev[VELOCITY_INDEXES] # Shape [3]
+    # Sum of squared errors for all 3 components / (Total Elements * 3)
+    # Note: element_num is N*T. The total count for 3 components is element_num * 3
+    vel_rms = torch.sqrt(vel_variances.sum() / ((element_num - 1) * 3))
+    std_dev[VELOCITY_INDEXES] = vel_rms
 
     # Now std_dev has the SAME scaling factor for x, y, z
     mean_b = mean.view(1, 1, -1)
     std_b = std_dev.view(1, 1, -1)
-    NODE_TYPE_START = 3
-    NODE_TYPE_END = 5
     mean[NODE_TYPE_START:NODE_TYPE_END] = 0.0
     std_dev[NODE_TYPE_START:NODE_TYPE_END] = 1.0
 
