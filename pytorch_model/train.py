@@ -265,12 +265,12 @@ def train_gnet_ema(device):
     include_mesh_pos = dataconfig['data']['include_mesh_pos']
 
     if include_mesh_pos:
-        MESH_POS_INDEXES = slice(0, 3)
+        world_pos_idxs = slice(3, 6)
         VELOCITY_INDEXES = slice(8, 11)
         STRESS_INDEXES = slice(11, 12)
         DIM_IN = 12  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1)
     else:
-        MESH_POS_INDEXES = None
+        world_pos_idxs = slice(0, 3)
         VELOCITY_INDEXES = slice(5, 8)
         STRESS_INDEXES = slice(8, 9)
         DIM_IN = 9 # world_pos (3) + node_type (2) + vel (3) + stress (1)
@@ -311,7 +311,7 @@ def train_gnet_ema(device):
     # TODO FOR 80-20 SPLIT
     # Build dataset from these trajectories
     dataset = DefPlateDataset(list_of_trajs, add_world_edges=add_world_edges, k_neighb=k_neighb, radius=radius,
-                              mesh_pos_indexes=mesh_pos_indexes)
+                              world_pos_idxs=world_pos_idxs)
     print(f"Total training pairs (X_t, X_t+1): {len(dataset)}")
     # Random 80/20 split and then load data
     total = len(dataset)

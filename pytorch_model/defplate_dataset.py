@@ -106,7 +106,7 @@ class DefPlateDataset(Dataset):
     total_comp_time = 0.0
     total_comp_calls = 0
 
-    def __init__(self, list_of_trajs, add_world_edges, k_neighb, radius, mesh_pos_indexes):
+    def __init__(self, list_of_trajs, add_world_edges, k_neighb, radius, world_pos_idxs):
         """
         Construct a dataset from a list of trajectories objects.
 
@@ -125,7 +125,7 @@ class DefPlateDataset(Dataset):
         self.add_world_edges = add_world_edges
         self.k_neighb = k_neighb
         self.radius = radius
-        self.mesh_pos_indexes = mesh_pos_indexes
+        self.world_pos_idxs = world_pos_idxs
 
         for traj_id, traj in enumerate(list_of_trajs):
             X_seq = traj["X_seq_norm"]
@@ -156,8 +156,8 @@ class DefPlateDataset(Dataset):
         # time tracking
         time_start = time.time()
 
-        # Compute Dynamic Adjacency TODO UNDERSTAND
-        pos_t = X_t[:, self.mesh_pos_indexes]
+        # Compute Dynamic Adjacency
+        pos_t = X_t[:, self.world_pos_idxs]
 
         # Add world edges
         if self.add_world_edges == "radius":
