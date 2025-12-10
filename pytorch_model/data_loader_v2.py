@@ -132,6 +132,7 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
         stress = traj["stress"]  # (T,N,1)
         node_type = traj["node_type"]  # (N,1)
         mesh_cells = traj["cells"]  # (C,4)
+        mesh_pos = traj["mesh_pos"]
         if idx == 0 or idx == 1 or idx == 2:
             print(f"traj: \n \t type(traj) = {type(traj)}, len={len(traj)}")
             print(f"world pos: \n"
@@ -189,7 +190,12 @@ def load_all_trajectories(tfrecord_path, meta_path, max_trajs):
             centroid_mesh = mesh_pos.mean(axis=0)
             centered_mesh_pos = mesh_pos - centroid_mesh
 
-            feats_t = np.concatenate([centered_mesh_pos, centered_world_pos, node_type_floatcast, vel[t], stress[t]], axis=-1)
+            # ---- velocity centroid + "normalization" (centering) ----
+            # This removes the rigid/global translation component of velocity
+            centroid_vel = vel[t].mean(axis=0)                 # [3]
+            vel_centered = vel[t] - centroid_vel               # [N,3]
+
+            feats_t = np.concatenate([centered_mesh_pos, centered_world_pos, node_type_floatcast, vel_centered, stress[t]], axis=-1)
             feats_list.append(feats_t)
         X_seq = torch.tensor(np.stack(feats_list, axis=0), dtype=torch.float32)
         # print(f"X_seq.shape={X_seq.shape}")
