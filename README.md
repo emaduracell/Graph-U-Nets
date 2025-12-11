@@ -1,5 +1,10 @@
 ## Graph U-Nets
+
 #### How to run
+0. Create a `raw_data` folder in `pytorch_model` with test.tfrecord, train.tfrecord, valid.tfrecord, meta.json files. 
+  So for example `pytorch_model/raw_data/train.tfrecord`.
+
+The following commands must be ran with `pytorch_model` as working directory.
 1. Run `python main_data.py`: you can set it via `dataconfig.yaml`.
 2. Run `python train.py`: you can set it via `config.yaml`.
 3. Run `python visualize_simulation.py`: you can set it via the following parameters.
