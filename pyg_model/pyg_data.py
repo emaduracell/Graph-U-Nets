@@ -10,7 +10,7 @@ from torch_geometric.utils import coalesce, to_undirected
 from tfrecord.torch.dataset import TFRecordDataset
 
 # Feature layout (per node):
-FEATURE_DIM = 9
+FEATURE_DIM = 12
 TARGET_DIM = 4  # velocity (3) + stress (1)
 NODE_TYPE_START = 3
 NODE_TYPE_END = 5
@@ -89,15 +89,9 @@ def _normalize_id_list(ids):
         return flat
     # Fallback: try to cast
     return [int(ids)]
-
-
 class GraphUNetTFRecordDataset(Dataset):
     """
-    Lazy dataset backed by preprocessed trajectory files:
-      - stats saved once to data/graph_unet_preprocessed/graph_unet_stats.pt
-      - per-trajectory files graph_unet_traj_{idx}.pt with normalized x/y sequences
-      - index file mapping global sample idx -> (traj_idx, time_idx)
-    If preprocessed assets are missing, instruct running preprocess_graph_unet.py.
+    Lazy dataset backed by preprocessed trajectory files.
     """
 
     def __init__(
@@ -107,11 +101,13 @@ class GraphUNetTFRecordDataset(Dataset):
         preprocessed_dir: Optional[str] = None,
         allowed_traj_ids: Optional[List[int]] = None,
         allowed_time_ids: Optional[List[int]] = None,
+        transform=None,  # <--- NEW ARGUMENT ADDED HERE
     ):
         super().__init__()
         self.data_dir = data_dir
         self.split = split
         self.pre_dir = preprocessed_dir or os.path.join(data_dir, PREPROCESSED_DIR)
+        self.transform = transform # <--- STORE THE TRANSFORM
 
         # Load stats and index
         stats_path = os.path.join(self.pre_dir, STATS_FILE)
@@ -119,7 +115,7 @@ class GraphUNetTFRecordDataset(Dataset):
         if not os.path.exists(stats_path) or not os.path.exists(index_path):
             raise FileNotFoundError(
                 f"Preprocessed data not found in {self.pre_dir}. "
-                f"Please run preprocess_graph_unet.py first."
+                f"Please run pyg_preprocess.py first."
             )
 
         stats = torch.load(stats_path, map_location="cpu")
@@ -133,7 +129,7 @@ class GraphUNetTFRecordDataset(Dataset):
         index_data = torch.load(index_path, map_location="cpu")
         index_list: List[Tuple[int, int]] = index_data["index"]
 
-        # Optional filtering by trajectory and/or time step
+        # Optional filtering
         allowed_traj_ids = _normalize_id_list(allowed_traj_ids)
         allowed_time_ids = _normalize_id_list(allowed_time_ids)
         allowed_traj_set = set(allowed_traj_ids) if allowed_traj_ids else None
@@ -148,8 +144,6 @@ class GraphUNetTFRecordDataset(Dataset):
 
         self.index_list: List[Tuple[int, int]] = index_list
         self.available_traj = set(idx for idx, _ in self.index_list)
-
-        # simple one-entry cache for trajectory content
         self._traj_cache = {"idx": None, "data": None}
 
     def __len__(self) -> int:
@@ -168,15 +162,23 @@ class GraphUNetTFRecordDataset(Dataset):
     def __getitem__(self, idx: int) -> Data:
         traj_idx, time_idx = self.index_list[idx]
         traj = self._load_traj(traj_idx)
-        x = traj["x_seq"][time_idx].float()       # [N, 9], already normalized
-        y = traj["y_seq"][time_idx].float()       # [N, 4], already normalized
-        node_type = traj["node_type"].long()      # [N]
-        edge_index = traj["edge_index"].long()    # [2, E]
-        return Data(
+        
+        # Load tensors
+        x = traj["x_seq"][time_idx].float()
+        y = traj["y_seq"][time_idx].float()
+        node_type = traj["node_type"].long()
+        edge_index = traj["edge_index"].long()
+        
+        # Create Data object
+        data = Data(
             x=x,
             y=y,
             edge_index=edge_index,
             node_type=node_type,
         )
 
-
+        # <--- APPLY TRANSFORM HERE
+        if self.transform is not None:
+            data = self.transform(data)
+            
+        return data

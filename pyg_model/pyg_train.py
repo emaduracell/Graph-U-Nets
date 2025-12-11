@@ -9,7 +9,10 @@ from pyg_data import GraphUNetTFRecordDataset
 from pyg_model import GraphUNetDefPlatePyG
 from pyg_plots import make_final_plots
 
+from torch_geometric.transforms import Compose
+from pyg_transform import InjectKinematicVelocity, AddDynamicWorldEdges
 
+# Constants for clarity
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
 PLOTS_DIR = os.path.join(os.path.dirname(__file__), "plots")
@@ -30,7 +33,10 @@ def get_device(name: str):
 
 
 def compute_loss(preds, targets, node_type):
-    """MSE with masks: velocity on normals, stress on normals+boundary."""
+    """
+    MSE with masks.
+    Targets are [Vel(3), Stress(1)] -> Slices 0:3 and 3:4 are SAFE.
+    """
     vel_mask = (node_type == NORMAL_NODE)
     stress_mask = (node_type == NORMAL_NODE) | (node_type == BOUNDARY_NODE)
 
@@ -144,8 +150,27 @@ def main():
 
     device = get_device(train_cfg.get("device", "auto"))
     torch.manual_seed(train_cfg.get("seed", 42))
+    
+    _radius = data_cfg.get("radius", 0.05)  # Use data_cfg for radius as per updated config
 
-    # Dataset with optional trajectory/time filtering
+    # --- DEFINE TRANSFORMS (UPDATED INDICES) ---
+    physics_transform = Compose([
+        # 1. Kinematic Velocity:
+        # Looks at Target 'y' [Vel(3), Stress(1)]. Slice(0,3) is correct.
+        InjectKinematicVelocity(velocity_idxs=slice(0, 3)), 
+        
+        # 2. Collision Edges:
+        # Looks at Input 'x' [Mesh(3), World(3), Type(2)...]
+        # We must look at slice(3, 6) to find World Position!
+        # Slice(0,3) is Mesh Position (undeformed), which is wrong for collisions.
+        AddDynamicWorldEdges(
+            mode='radius', 
+            radius=_radius, 
+            world_pos_idxs=slice(3, 6) 
+        )
+    ])
+
+    # Standard Dataset Initialization
     dataset = GraphUNetTFRecordDataset(
         data_dir=os.path.join(os.path.dirname(__file__), data_cfg["data_dir"]),
         split=data_cfg.get("split", "train"),
@@ -155,6 +180,7 @@ def main():
         ),
         allowed_traj_ids=data_cfg.get("selected_traj_ids"),
         allowed_time_ids=data_cfg.get("selected_time_ids"),
+        transform=physics_transform
     )
 
     mode = train_cfg.get("mode", "standard")
@@ -166,6 +192,7 @@ def main():
             raise ValueError("overfit_traj_id must be set when mode == 'overfit'")
 
         # Narrow dataset to the overfit specification
+        # --- FIX: Added 'transform=physics_transform' here too! ---
         dataset = GraphUNetTFRecordDataset(
             data_dir=os.path.join(os.path.dirname(__file__), data_cfg["data_dir"]),
             split=data_cfg.get("split", "train"),
@@ -175,8 +202,9 @@ def main():
             ),
             allowed_traj_ids=[overfit_traj],
             allowed_time_ids=overfit_time_idx,
+            transform=physics_transform # <--- ADDED
         )
-        # Single loader used for both train/val to mimic overfit behavior
+        
         train_loader = DataLoader(
             dataset,
             batch_size=len(dataset),
@@ -211,8 +239,12 @@ def main():
             num_workers=train_cfg.get("num_workers", 0),
         )
 
+    # --- FIX: Update Input Channels ---
+    # File Dim (12) + Kinematic Injection (3) = 15
+    real_in_channels = dataset.feature_dim + 3
+    
     model = GraphUNetDefPlatePyG(
-        in_channels=dataset.feature_dim,
+        in_channels=real_in_channels, # <--- UPDATED
         hidden_channels=model_cfg["hidden_channels"],
         depth=model_cfg["depth"],
         pool_ratios=model_cfg["pool_ratios"],
@@ -271,10 +303,12 @@ def main():
         for batch in val_loader:
             batch = batch.to(device)
             preds = model(batch.x, batch.edge_index, batch=batch.batch if hasattr(batch, "batch") else None)
-            # denormalize velocity+stress targets/preds
+            
+            # Denormalization (Target std/mean is safe, it aligns with 'y')
             preds_denorm = preds * dataset.std_target.to(device) + dataset.mean_target.to(device)
             tgts_denorm = batch.y * dataset.std_target.to(device) + dataset.mean_target.to(device)
-            # apply masks consistent with loss
+            
+            # apply masks
             vel_mask = (batch.node_type == NORMAL_NODE)
             stress_mask = (batch.node_type == NORMAL_NODE) | (batch.node_type == BOUNDARY_NODE)
 
@@ -305,5 +339,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
