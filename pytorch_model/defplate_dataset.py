@@ -159,7 +159,7 @@ class DefPlateDataset(Dataset):
 
     def __getitem__(self, idx):
         """
-        Fetches the sample and computes the dynamic adjacency matrix on-the-fly.
+        Fetches the sample and computes the dynamic adjacency matrix.
         """
         # Retrieve trajectory and its features
         s = self.samples[idx]
@@ -171,26 +171,17 @@ class DefPlateDataset(Dataset):
         base_A = traj["A"]
         node_types = traj["node_type"]
 
-        # time tracking
-        time_start = time.time()
-
         time_start = time.time()
         # Compute Dynamic Adjacency
         pos_t = X_t[:, self.world_pos_idxs]
+        A_dynamic, dynamic_edges = self.add_w_edges(base_A, node_types, pos_t)
         # Time tracking ends
         compute_duration = time.time() - time_start
 
-        A_dynamic, dynamic_edges = self.add_w_edges(base_A, node_types, pos_t)
-
-        # Pass all inputs to model: mesh_pos, world_pos, node_type, vel, stress
-        # New: Add next-step velocity for kinematic nodes (SPHERE_NODE) as input
-        # Extract velocity at t+1 (already normalized)
+        # Extract velocity at t+1 (already normalized) and create new feature with filled only sphere nodes. Then cat
         v_tp1 = X_tp1[:, self.velocity_idxs]
-        # Identify sphere nodes
         sphere_mask = (node_types == SPHERE_NODE)
-        # Create feature initialized to 0
         kinematic_vel = torch.zeros_like(v_tp1)
-        # Fill only sphere nodes
         kinematic_vel[sphere_mask] = v_tp1[sphere_mask]
         
         # Concatenate to X_t

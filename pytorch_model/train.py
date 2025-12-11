@@ -435,7 +435,7 @@ def train_gnet(device, num_workers, pin_memory):
     print(f"Mode: {mode}")
     print(f"Weight decay = {adam_weight_decay}")
     print(f"Number of trajectories on which I'm training = {num_train_trajs}")
-    print(f"len(train_loader) = {len(train_loader)} \t type(train_loader)={type(train_loader)}")
+    print(f"len(train_loader) = {len(train_loader)}")
 
     # History tracking
     train_losses = []

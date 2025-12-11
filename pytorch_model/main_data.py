@@ -109,6 +109,9 @@ if __name__ == "__main__":
     output_dir = dataconfig['data']['output_dir']
     output_dir = output_dir + f"_{norm_method}_{include_mesh_pos}"
 
+    if norm_method not in ['centroid', 'standard']:
+        raise ValueError(f"norm_method == {norm_method} not supported")
+
     if include_mesh_pos:
         mesh_pos_idxs = slice(0, 3)
         world_pos_idxs = slice(3, 6)

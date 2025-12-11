@@ -553,7 +553,7 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
     myargs.dropout_gnn = model_cfg["dropout_gnn"]
     myargs.dropout_mlps_final = model_cfg["dropout_mlps_final"]
 
-    dim_in = X_seq_norm.shape[2]
+    # dim_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
     model = GraphUNet_DefPlate(dim_in, 3, 1, myargs).to(device)
     state = torch.load(checkpoint_path, map_location=device)
@@ -724,16 +724,18 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
 if __name__ == "__main__":
     # Visualization settings  [374,356,302,387] overfit_traj_id: 2
     traj_idx = 0
-    t_step = 4  # time index t (visualize t -> t+1)
-    rollout_set = False  # if True, run multi-step rollout
-    rollout_steps = 5  # maximum number of rollout steps for multi-step visualization
+    t_step = 10  # time index t (visualize t -> t+1)
+    rollout_set = True  # if True, run multi-step rollout
+    rollout_steps = 10  # maximum number of rollout steps for multi-step visualization
     render_mode = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
     preprocessed_path = config['training']['datapath']
     add_world_edges = config['training']['add_world_edges']
-    checkpoint_path = (config['training']['model_path'] + "model_" + preprocessed_path.rsplit("/", 1)[0])
+    checkpoint_path = ((config['training']['model_path'] + "model_" + preprocessed_path.rsplit("/", 1)[0]) + "_" +
+                       add_world_edges)
     if "True" in preprocessed_path:
+        print("\n\nTrue\n\n")
         mesh_pos_idxs = slice(0, 3)
         world_pos_idxs = slice(3, 6)
         node_type_idxs = slice(6, 8)

@@ -5,24 +5,24 @@ model:
   hid_gnn_layer_dim: 128
   hid_mlp_dim: 256
   k_pool_ratios: [0.9, 0.8, 0.7]
-  dropout_gnn: 0 # default = 0.1, overfit = 0
-  dropout_mlps_final: 0 # default = 0.1, overfit = 0
+  dropout_gnn: 0.05 # default = 0.1, overfit = 0
+  dropout_mlps_final: 0.05 # default = 0.1, overfit = 0
 
 # Training parameters TODO add loss as a hyperparameter
 training:
   lr: 0.0001 # default = 1e-4 good value 0.001
-  epochs: 1000
+  epochs: 500
   batch_size: 8
-  shuffle: False # False for overfitting?
-  adam_weight_decay: 0 # default: 1e-4 | overfit = 0
-  num_train_trajs: 1
-  mode: "overfit" # None or "overfit"
-  gamma_lr_scheduler: 1 # lr_final = lr0 * gamma^epochs 0.9995 good value 0.9997
+  shuffle: True # False for overfitting
+  adam_weight_decay: 0.0001 # default: 1e-4 | overfit = 0
+  num_train_trajs: 8
+  mode: "None" # None or "overfit"
+  gamma_lr_scheduler: 0.9998 # lr_final = lr0 * gamma^epochs 0.9995 good value 0.9997
   random_seed: 42 # Seed for train/test split and any random operations
   overfit_traj_id: 0 # For overfit mode: which trajectory to use (null = use first available)
   overfit_time_idx: [0,1,2,3,4,5,6,7] # For overfit mode: which time step t to use (null = use all time steps from trajectory) [13, 202, 302, 10, 11, 90, 321, 43]
-  add_world_edges: "None" # 'neighbours' or 'radius' or 'None'
-  datapath: "data_standard_False/preprocessed_train.pt"
+  add_world_edges: "radius" # 'neighbours' or 'radius' or 'None'
+  datapath: "data_standard_True/preprocessed_train.pt"
   radius_world_edge: 0.03
   k_neighb: 1
   model_path: "model_out/"
