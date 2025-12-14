@@ -34,7 +34,7 @@ def get_device(name: str):
 
 def compute_loss(preds, targets, node_type):
     """
-    MSE with masks.
+    huber with masks.
     Targets are [Vel(3), Stress(1)] -> Slices 0:3 and 3:4 are SAFE.
     """
     vel_mask = (node_type == NORMAL_NODE)
@@ -56,10 +56,10 @@ def compute_loss(preds, targets, node_type):
     stress_loss = torch.tensor(0.0, device=preds.device)
 
     if vel_count > 0:
-        vel_loss = F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])
+        vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
         loss = loss + weight_vel * vel_loss
     if stress_count > 0:
-        stress_loss = F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])
+        stress_loss = F.huber_loss(pred_stress[stress_mask], target_stress[stress_mask])
         loss = loss + weight_stress * stress_loss
 
     return loss, vel_loss, stress_loss
@@ -151,18 +151,11 @@ def main():
     device = get_device(train_cfg.get("device", "auto"))
     torch.manual_seed(train_cfg.get("seed", 42))
     
-    _radius = data_cfg.get("radius", 0.05)  # Use data_cfg for radius as per updated config
+    _radius = data_cfg.get("radius", 0.05)  
 
-    # --- DEFINE TRANSFORMS (UPDATED INDICES) ---
+    # --- DEFINE TRANSFORMS ---
     physics_transform = Compose([
-        # 1. Kinematic Velocity:
-        # Looks at Target 'y' [Vel(3), Stress(1)]. Slice(0,3) is correct.
         InjectKinematicVelocity(velocity_idxs=slice(0, 3)), 
-        
-        # 2. Collision Edges:
-        # Looks at Input 'x' [Mesh(3), World(3), Type(2)...]
-        # We must look at slice(3, 6) to find World Position!
-        # Slice(0,3) is Mesh Position (undeformed), which is wrong for collisions.
         AddDynamicWorldEdges(
             mode='radius', 
             radius=_radius, 
@@ -170,7 +163,7 @@ def main():
         )
     ])
 
-    # Standard Dataset Initialization
+    # Dataset Initialization
     dataset = GraphUNetTFRecordDataset(
         data_dir=os.path.join(os.path.dirname(__file__), data_cfg["data_dir"]),
         split=data_cfg.get("split", "train"),
@@ -191,8 +184,6 @@ def main():
         if overfit_traj is None:
             raise ValueError("overfit_traj_id must be set when mode == 'overfit'")
 
-        # Narrow dataset to the overfit specification
-        # --- FIX: Added 'transform=physics_transform' here too! ---
         dataset = GraphUNetTFRecordDataset(
             data_dir=os.path.join(os.path.dirname(__file__), data_cfg["data_dir"]),
             split=data_cfg.get("split", "train"),
@@ -202,7 +193,7 @@ def main():
             ),
             allowed_traj_ids=[overfit_traj],
             allowed_time_ids=overfit_time_idx,
-            transform=physics_transform # <--- ADDED
+            transform=physics_transform 
         )
         
         train_loader = DataLoader(
@@ -239,12 +230,11 @@ def main():
             num_workers=train_cfg.get("num_workers", 0),
         )
 
-    # --- FIX: Update Input Channels ---
     # File Dim (12) + Kinematic Injection (3) = 15
     real_in_channels = dataset.feature_dim + 3
     
     model = GraphUNetDefPlatePyG(
-        in_channels=real_in_channels, # <--- UPDATED
+        in_channels=real_in_channels, 
         hidden_channels=model_cfg["hidden_channels"],
         depth=model_cfg["depth"],
         pool_ratios=model_cfg["pool_ratios"],
@@ -297,33 +287,41 @@ def main():
 
     # Final predictions on validation for plotting
     model.eval()
-    all_preds = []
-    all_tgts = []
+    
+    # --- CHANGED: Separate storage for Vel (3D) and Stress (1D) ---
+    all_vel_preds, all_vel_tgts = [], []
+    all_stress_preds, all_stress_tgts = [], []
+    
     with torch.no_grad():
         for batch in val_loader:
             batch = batch.to(device)
             preds = model(batch.x, batch.edge_index, batch=batch.batch if hasattr(batch, "batch") else None)
             
-            # Denormalization (Target std/mean is safe, it aligns with 'y')
+            # Denormalization
             preds_denorm = preds * dataset.std_target.to(device) + dataset.mean_target.to(device)
             tgts_denorm = batch.y * dataset.std_target.to(device) + dataset.mean_target.to(device)
             
-            # apply masks
+            # Create Masks
             vel_mask = (batch.node_type == NORMAL_NODE)
             stress_mask = (batch.node_type == NORMAL_NODE) | (batch.node_type == BOUNDARY_NODE)
 
-            # velocity
+            # --- CHANGED: Append to separate lists ---
             if vel_mask.any():
-                all_preds.append(preds_denorm[vel_mask][:, :3].cpu())
-                all_tgts.append(tgts_denorm[vel_mask][:, :3].cpu())
-            # stress
+                all_vel_preds.append(preds_denorm[vel_mask][:, :3].cpu())
+                all_vel_tgts.append(tgts_denorm[vel_mask][:, :3].cpu())
+            
             if stress_mask.any():
-                all_preds.append(preds_denorm[stress_mask][:, 3:4].cpu())
-                all_tgts.append(tgts_denorm[stress_mask][:, 3:4].cpu())
+                all_stress_preds.append(preds_denorm[stress_mask][:, 3:4].cpu())
+                all_stress_tgts.append(tgts_denorm[stress_mask][:, 3:4].cpu())
 
-    if all_preds and all_tgts:
-        preds_cat = torch.cat(all_preds, dim=0)
-        tgts_cat = torch.cat(all_tgts, dim=0)
+    # --- CHANGED: Concatenate separately and pass to plot function ---
+    if len(all_vel_preds) > 0 and len(all_stress_preds) > 0:
+        vel_preds_cat = torch.cat(all_vel_preds, dim=0)
+        vel_tgts_cat = torch.cat(all_vel_tgts, dim=0)
+        
+        stress_preds_cat = torch.cat(all_stress_preds, dim=0)
+        stress_tgts_cat = torch.cat(all_stress_tgts, dim=0)
+
         make_final_plots(
             save_dir=PLOTS_DIR,
             train_losses=train_losses,
@@ -332,10 +330,14 @@ def main():
             train_stress_losses=train_stress_losses,
             val_vel_losses=val_vel_losses,
             val_stress_losses=val_stress_losses,
-            predictions=preds_cat.numpy(),
-            targets=tgts_cat.numpy(),
+            # Pass separate tensors
+            vel_preds=vel_preds_cat,
+            vel_targets=vel_tgts_cat,
+            stress_preds=stress_preds_cat,
+            stress_targets=stress_tgts_cat
         )
-
+    else:
+        print("Warning: No predictions collected for plotting.")
 
 if __name__ == "__main__":
     main()

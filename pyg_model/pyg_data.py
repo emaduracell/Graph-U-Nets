@@ -74,11 +74,15 @@ def _one_hot_node_type(node_type: np.ndarray) -> np.ndarray:
 
 
 def _normalize_id_list(ids):
-    """Accept int, list of int, or nested lists and return flat list of ints or None."""
     if ids is None:
         return None
     if isinstance(ids, int):
         return [int(ids)]
+    # NEW: Support string ranges like "0-19"
+    if isinstance(ids, str) and "-" in ids:
+        start, end = map(int, ids.split("-"))
+        return list(range(start, end + 1))
+    
     if isinstance(ids, (list, tuple)):
         flat = []
         for v in ids:
@@ -87,8 +91,9 @@ def _normalize_id_list(ids):
             else:
                 flat.append(int(v))
         return flat
-    # Fallback: try to cast
     return [int(ids)]
+
+    
 class GraphUNetTFRecordDataset(Dataset):
     """
     Lazy dataset backed by preprocessed trajectory files.
