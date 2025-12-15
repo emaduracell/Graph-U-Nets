@@ -1,6 +1,6 @@
 import torch
 import os
-from data.data_loader import load_all_trajectories
+from data_builder import load_all_trajectories
 from helpers.helpers import load_config
 
 def _preprocess_and_save(dataconfig):

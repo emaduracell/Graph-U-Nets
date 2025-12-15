@@ -7,9 +7,12 @@ from helpers.helpers import get_feature_indices, load_config
 from pytorch_model.helpers.helpers import print_debug_nodetype, print_debug_shapes_dataloader
 from data.decode_tfrecord_utils import cast_trajectory_from_record
 
-NORMAL_NODE = [0, 0]  # value 0 (NORMAL)
-SPHERE_NODE = [1, 0]  # value 1 (SPHERE)
-BOUNDARY_NODE = [0, 1]  # value 3 (BOUNDARY)
+NORMAL_NODE_OH = [0, 0]  # value 0 (NORMAL)
+NORMAL_NODE = 0
+SPHERE_NODE_OH = [1, 0]  # value 1 (SPHERE)
+SPHERE_NODE = 1
+BOUNDARY_NODE_OH = [0, 1]  # value 3 (BOUNDARY)
+BOUNDARY_NODE = 3
 VELOCITY_MEAN = 0.0
 
 
@@ -46,21 +49,32 @@ def build_edges_from_cells(mesh_cells):
     return torch.tensor(edge_list, dtype=torch.long)
 
 
-def build_velocity(world_pos):
+def build_velocity(world_pos, mode):
     """
     Build velocity array from world positions.
 
-    :param world_pos: np.ndarray
-        World positions with shape (T, N, 3)
+    Args:
+        world_pos: np.ndarray
+            World positions with shape (T, N, 3)
+        mode: str
+            'actuator' | 'normal'
     :return vel: np.ndarray
         Velocity array with shape (T, N, 3)
     """
+    if mode not in ["normal", "actuator"]:
+        raise ValueError(f"Unkown mode = {mode}")
+
     time_step_dim, number_of_nodes, _ = world_pos.shape
     vel = np.zeros((time_step_dim, number_of_nodes, 3), dtype=np.float32)
-    for t in range(1, time_step_dim):
-        vel[t] = world_pos[t] - world_pos[t - 1]
-    return vel
 
+    if mode == "normal":
+        for t in range(1, time_step_dim):
+            vel[t] = world_pos[t] - world_pos[t - 1]
+    elif mode == "actuator":
+        for t in range(1, time_step_dim):
+            vel[t] = world_pos[t+1] - world_pos[t]
+
+    return vel
 
 def build_onehot_nodetype(node_type):
     """
@@ -74,7 +88,7 @@ def build_onehot_nodetype(node_type):
         node_type_raw: np.ndarray
             Copy of original node type
     """
-    lookup = np.array([NORMAL_NODE, SPHERE_NODE, [0, 0], BOUNDARY_NODE])
+    lookup = np.array([NORMAL_NODE_OH, SPHERE_NODE_OH, [0, 0], BOUNDARY_NODE_OH])
     node_type_raw = node_type.copy()
     node_type_idx = node_type_raw.squeeze(-1)
     node_type_onehot = lookup[node_type_idx]
@@ -358,15 +372,17 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx):
     time_step_dim, number_of_nodes, _ = world_pos.shape
 
     # Build velocity
-    vel = build_velocity(world_pos)
+    vel_normal = build_velocity(world_pos, mode="normal")
+    vel_actuator_tp1 = build_velocity(world_pos, mode="actuator")
+    # FIXME SEE IF THIS ACTUALLY DOES WHAT IT SHOULD DO
+    vel_normal[node_type == SPHERE_NODE] = vel_actuator_tp1[node_type == SPHERE_NODE]
 
     # One hot node type
     node_type_onehot, node_type_raw = build_onehot_nodetype(node_type)
-
     print_debug_nodetype(idx, node_type)
 
     # Build feature sequence Feature layout: [mesh_pos, pos_x, pos_y, pos_z, node_type, vel_x, vel_y, vel_z, stress]
-    X_feat = build_feature_sequence(world_pos, vel, stress, node_type_onehot, mesh_pos,
+    X_feat = build_feature_sequence(world_pos, vel_normal, stress, node_type_onehot, mesh_pos,
                                     include_mesh_pos, norm_method)
 
     # Build adjacency matrix from set

@@ -1,40 +1,51 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from graph_unet_layers import GCN, GraphUnet, Initializer, norm_g
+from graph_unet_layers import GCN, GraphUnet
+from initializer import Initializer
+from pytorch_model.model.helpers_models import get_adj_norm_fn
+
 
 class GraphUNet_DefPlate(nn.Module):
     """
     Graph U-Net model for one-step graph-to-graph prediction: (A, X_t) -> (velocity_vec_{t+1}, stress_{t+1})
 
-    self.act_gnn: activation function used for the gcn layers
-    self.act_mlps_final: activation function for the final MLPs for the prediction of stress and velocity
-    self.start_gcn: initial gcn, which has a dimensionality reduction technique
-    self.g_unet: graph unet
-    self.stress_mlp: final MLP for the prediction of stress. Note: it doesn't end with an activation function
-                    to avoid enforcing a range
-    self.velocity_mlp: final MLP for the prediction of velocity. Note: it doesn't end with an activation function
-                    to avoid enforcing a range
+    self.act_gnn:
+        activation function used for the gcn layers
+    self.act_mlps_final:
+        activation function for the final MLPs for the prediction of stress and velocity
+    self.start_gcn:
+        initial gcn, which has a dimensionality reduction technique
+    self.g_unet:
+        graph unet
+    self.stress_mlp:
+        final MLP for the prediction of stress. It doesn't end with an activation function to avoid enforcing a range
+    self.velocity_mlp:
+        final MLP for the prediction of velocity. As above for the activation
+    self.adj_norm_fn:
+        adjacency matrix normalization function
     """
 
-    def __init__(self, in_dim, vel_out_dim, stress_out_dim, model_config_hyperparams):
+    def __init__(self, in_dim, vel_out_dim, stress_out_dim, model_config_hyperparams,
+                 adj_norm):
         """
         Creates an instance of the Graph-U-Net
 
-        :param in_dim: int
-            Input node feature dimension (F_in).
-        :param out_dim: int
-            Output node feature dimension (F_out).
-            Often F_out == F_in if you predict all channels (coords + others).
-        :param model_config_hyperparams: argparse.Namespace
-            Same args used for original GNet:
-                act_n   : name of activation for GCNs (e.g. 'ELU')
-                act_c   : name of activation for head (e.g. 'ELU')
-                l_dim   : hidden dim in GCN / GraphUnet
-                h_dim   : hidden dim in node-wise MLP
-                ks      : list of pool ratios for GraphUnet
-                drop_n  : dropout prob for node features (GCN/GraphUnet)
-                drop_c  : dropout prob for head
+        Args:
+            in_dim: int
+                Input node feature dimension (F_in).
+            out_dim: int
+                Output node feature dimension (F_out).
+                Often F_out == F_in if you predict all channels (coords + others).
+            model_config_hyperparams: argparse.Namespace
+                Same args used for original GNet:
+                    act_n   : name of activation for GCNs (e.g. 'ELU')
+                    act_c   : name of activation for head (e.g. 'ELU')
+                    l_dim   : hidden dim in GCN / GraphUnet
+                    h_dim   : hidden dim in node-wise MLP
+                    ks      : list of pool ratios for GraphUnet
+                    drop_n  : dropout prob for node features (GCN/GraphUnet)
+                    drop_c  : dropout prob for head
 
         :return nothing
         """
@@ -49,12 +60,13 @@ class GraphUNet_DefPlate(nn.Module):
         hid_mlp_dim = model_config_hyperparams.hid_mlp_dim
         k_pool_ratios = model_config_hyperparams.k_pool_ratios
 
+        self.adj_norm_fn = get_adj_norm_fn(adj_norm)
+
         # getattr(nn, act_gnn) gets from nn module the activation function with name of the second parameter/string
         self.act_gnn = getattr(nn, act_gnn)()
         self.act_mlps_final = getattr(nn, act_mlps_final)()
-
         # Initial GCN
-        self.start_gcn = GCN(in_dim, hid_gnn_layer_dim, self.act_gnn, dropout_gnn)
+        self.start_gcn = GCN(in_dim, hid_gnn_layer_dim, self.act_gnn, dropout_gnn, adj_norm)
         # Graph U-Net
         self.g_unet = GraphUnet(
             ks=k_pool_ratios,
@@ -62,9 +74,10 @@ class GraphUNet_DefPlate(nn.Module):
             out_dim=hid_gnn_layer_dim,  # out_dim (unused in this impl, kept for API)
             dim=hid_gnn_layer_dim,
             act=self.act_gnn,
-            drop_p=dropout_gnn
+            drop_p=dropout_gnn,
+            adj_norm=adj_norm
         )
-        # Velocity MLP: [N, l_dim] -> [N, 3]
+        # Velocity MLP Head: [N, l_dim] -> [N, 3]
         self.velocity_mlp = nn.Sequential(
             nn.Dropout(p=dropout_mlps_final),
             nn.Linear(hid_gnn_layer_dim, hid_mlp_dim),
@@ -72,7 +85,7 @@ class GraphUNet_DefPlate(nn.Module):
             nn.Dropout(p=dropout_mlps_final),
             nn.Linear(hid_mlp_dim, vel_out_dim),
         )
-        # Stress MLP: [N, l_dim] -> [N, 1]
+        # Stress MLP Head: [N, l_dim] -> [N, 1]
         self.stress_mlp = nn.Sequential(
             nn.Dropout(p=dropout_mlps_final),
             nn.Linear(hid_gnn_layer_dim, hid_mlp_dim),
@@ -87,17 +100,18 @@ class GraphUNet_DefPlate(nn.Module):
         """
         Forward over a batch of graphs.
 
-        :param batch_adj_A: list[Tensor]
-            List of adjacency matrices, each of shape [N, N].
-        :param batch_feat_X: list[Tensor]
-            List of input node features at time t, each [N, F_in].
-        :param feat_tp1_mat_list: Tensor or None
-            If provided: tensor of shape [B, N, F_in] with X_{t+1}.
-            We only compute loss on velocity (features 4-6) and stress (feature 7).
-            Loss is filtered by node_type:
-              - Velocity: only node_type == 0
-              - Stress: node_type == 0 or node_type == 6
-            If None: the method returns only predictions.
+        Args:
+            batch_adj_A: list[Tensor]
+                List of adjacency matrices, each of shape [N, N].
+            batch_feat_X: list[Tensor]
+                List of input node features at time t, each [N, F_in].
+            feat_tp1_mat_list: Tensor or None
+                If provided: tensor of shape [B, N, F_in] with X_{t+1}.
+                We only compute loss on velocity (features 4-6) and stress (feature 7).
+                Loss is filtered by node_type:
+                  - Velocity: only node_type == 0
+                  - Stress: node_type == 0 or node_type == 6
+                If None: the method returns only predictions.
 
         :returns
             If targets is not None:
@@ -116,10 +130,11 @@ class GraphUNet_DefPlate(nn.Module):
         """
         Single-step prediction (no loss), for rollouts.
 
-        :param A: Tensor
-            [N, N]
-        :param X_t: Tensor
-            [N, F_in]
+        Args:
+            A: Tensor
+                [N, N]
+            X_t: Tensor
+                [N, F_in]
 
         :return preds_list: Tensor
             [N, F_out]
@@ -130,10 +145,11 @@ class GraphUNet_DefPlate(nn.Module):
         """
         Process a batch of graphs, by using embed_one on each.
 
-        :param adj_A_list: List
-            list of [N, N] graphs
-        :param X_list: List
-            list of [N, F_in]
+        Args:
+            adj_A_list: List
+                list of [N, N] graphs
+            X_list: List
+                list of [N, F_in]
 
         :returns preds: Tensor
             Tensor of prediction [B, N, F_out]
@@ -149,16 +165,17 @@ class GraphUNet_DefPlate(nn.Module):
         """
         Process a single graph: apply initial GCN, full graph unet, final decoder.
 
-        :param g: [N, N]
-            adjacency matrix of the graph
-        :param h: [N, F_in]
-            node features at time t
+        Args:
+            g: [N, N]
+                adjacency matrix of the graph
+            h: [N, F_in]
+                node features at time t
 
         :returns y_pred: [N, F_out]
             predicted node features at t+1
         """
-        # Normalize adjacency
-        g = norm_g(g)  # [N, N]
+        # # Normalize adjacency
+        g = self.adj_norm_fn(g)  # [N, N]
         # Initial GCN
         h0 = self.start_gcn(g, h)  # [N, l_dim]
         # Graph U-Net: multi-scale node embeddings

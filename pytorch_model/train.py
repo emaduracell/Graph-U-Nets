@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, Subset
 import os
 import numpy as np
 from data.defplate_dataset import DefPlateDataset, collate_unet
-from model.model_entire import GraphUNet_DefPlate
+from model.gunet_model import GraphUNet_DefPlate
 from torch.optim.lr_scheduler import ExponentialLR
 import time
 from typing import List, Tuple
@@ -245,7 +245,8 @@ def train_gunet(device, num_workers, pin_memory):
 
     # Build model and optimizer
     model_hyperparams = create_model_hyperparams(model_cfg)
-    model = GraphUNet_DefPlate(feat_idx.dim_in, DIM_OUT_VEL, DIM_OUT_STRESS, model_hyperparams).to(device)
+    model = (GraphUNet_DefPlate(feat_idx.dim_in, DIM_OUT_VEL, DIM_OUT_STRESS, model_hyperparams, model_cfg['adj_norm'])
+             .to(device))
 
     optimizer = optim.Adam(model.parameters(), lr=train_cfg['lr'], weight_decay=train_cfg['adam_weight_decay'])
     scheduler = ExponentialLR(optimizer, gamma=train_cfg['gamma_lr_scheduler'])
