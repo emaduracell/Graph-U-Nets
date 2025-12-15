@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import os
 import plotly.graph_objects as go
-from defplate_dataset import add_w_edges_radius
+from data.defplate_dataset import add_w_edges_radius
 
 # Constants
 BOUNDARY_NODE = 3
@@ -217,8 +217,20 @@ def apply_filter_mask(pos, stress, node_type, cells, render_mode):
     return pos[mask], stress[mask], node_type[mask], cells_reindexed
 
 
-def main(world_pos_idxs, vel_idxs, stress_idxs, mesh_pos_idxs, render_mode,
-         traj_idx, t_step, preprocessed_path, metadata_path, add_world_edges):
+def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_world_edges, include_mesh_pos):
+    if include_mesh_pos:
+        mesh_pos_idxs = slice(0, 3)
+        world_pos_idxs = slice(3, 6)
+        node_type_idxs = slice(6, 8)
+        vel_idxs = slice(8, 11)
+        stress_idxs = slice(11, 12)
+    else:
+        mesh_pos_idxs = None
+        world_pos_idxs = slice(0, 3)
+        node_type_idxs = slice(3, 5)
+        vel_idxs = slice(5, 8)
+        stress_idxs = slice(8, 9)
+
     # 1. Print Global Statistics
     print_dataset_statistics(metadata_path, world_pos_idxs, vel_idxs, stress_idxs, mesh_pos_idxs)
 
@@ -298,35 +310,16 @@ def main(world_pos_idxs, vel_idxs, stress_idxs, mesh_pos_idxs, render_mode,
 
 
 if __name__ == "__main__":
+    # Choose dataset by setting NORM_METHOD, INCLUDE_MESH_POS
+    NORM_METHOD = "standard"
+    INCLUDE_MESH_POS = True
+    FULL_OUTPUT_DIR = f"data_{NORM_METHOD}_{INCLUDE_MESH_POS}"
+    PREPROCESSED_FILE = os.path.join(FULL_OUTPUT_DIR, "preprocessed_train.pt")
+    METADATA_FILE = os.path.join(FULL_OUTPUT_DIR, "preprocessed_metadata.pt")
 
-    # Visualization Settings
+    # Visualization Settings: change this to your preference
     TRAJ_IDX = 0
     TIME_STEP = 5
     RENDER_MODE = "all"
 
-    ADD_WORLD_EDGES = True
-
-    # Choose which dataset
-    INCLUDE_MESH_POS = True
-    NORM_METHOD = "standard"
-    OUTPUT_DIR_BASE = "data"
-    FULL_OUTPUT_DIR = f"{OUTPUT_DIR_BASE}_{NORM_METHOD}_{INCLUDE_MESH_POS}"
-
-    PREPROCESSED_FILE = os.path.join(FULL_OUTPUT_DIR, "preprocessed_train.pt")
-    METADATA_FILE = os.path.join(FULL_OUTPUT_DIR, "preprocessed_metadata.pt")
-
-    if INCLUDE_MESH_POS:
-        MESH_POS_IDXS = slice(0, 3)
-        WORLD_POS_IDXS = slice(3, 6)
-        NODE_TYPE_IDXS = slice(6, 8)
-        VEL_IDXS = slice(8, 11)
-        STRESS_IDXS = slice(11, 12)
-    else:
-        MESH_POS_IDXS = None
-        WORLD_POS_IDXS = slice(0, 3)
-        NODE_TYPE_IDXS = slice(3, 5)
-        VEL_IDXS = slice(5, 8)
-        STRESS_IDXS = slice(8, 9)
-
-    main(WORLD_POS_IDXS, VEL_IDXS, STRESS_IDXS, MESH_POS_IDXS, RENDER_MODE,
-         TRAJ_IDX, TIME_STEP, PREPROCESSED_FILE, METADATA_FILE, ADD_WORLD_EDGES)
+    main(RENDER_MODE, TRAJ_IDX, TIME_STEP, PREPROCESSED_FILE, METADATA_FILE, NORM_METHOD, INCLUDE_MESH_POS)

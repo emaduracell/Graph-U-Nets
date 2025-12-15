@@ -4,4 +4,5 @@ data:
   max_trajs: 1500
   tfrecord_path: "raw_data/train.tfrecord"
   meta_path: "raw_data/meta.json"
-  output_dir: "data"
+  output_dir: "processed_data/data"
+  add_world_edges: "radius" # 'neighbours' or 'radius' or 'None'

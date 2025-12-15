@@ -7,7 +7,11 @@ from physicsnemo.utils.neighbors.radius_search import radius_search
 def add_world_edges(graph, world_edge_radius=0.03, edge_stats_path="edge_stats.json"):
     """
     Adds world edges to the graph.
-    1. Clones
+    1. Clones the graph and gets edge stats and edge index
+    2. Gets world edges and applies radius_search
+    3. Filter self loops and existing edges
+    4. Compute edge features for new edges and mesh edge features based on world pos
+    5. Add new edges to the graph and new edge features
     """
     graph = graph.clone()
     device = graph.x.device
@@ -30,6 +34,7 @@ def add_world_edges(graph, world_edge_radius=0.03, edge_stats_path="edge_stats.j
         radius=world_edge_radius,
         return_dists=False,
         return_points=False,
+        backend='torch' # FIXME: NOTE I ADDED THIS FOR COMPATIBILITY WITH NON-CUDA MACHINES
     )
 
     # Filter out self-loops

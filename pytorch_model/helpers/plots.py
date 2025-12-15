@@ -3,18 +3,7 @@ import numpy as np
 import os
 import torch
 import textwrap
-import yaml
-
-# NORMAL_NODE = 0
-# SPHERE_NODE = 1
-# BOUNDARY_NODE = 3
-
-
-def load_config(config_path):
-    """Load model and training configuration from YAML file."""
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    return config
+from helpers import load_config
 
 
 def _flatten_dict(d, parent_key=""):
@@ -221,7 +210,7 @@ def plot_residuals(save_dir, feature_labels, iter_targets, iter_predictions, mod
 # MAIN PLOTTING FUNCTION
 # ------------------------------------------------------------------------------
 
-def make_final_plots(save_dir, train_losses, val_losses, metric_name, train_metrics, val_metrics, grad_norms, model,
+def make_final_plots(save_dir, train_losses, val_losses, metric_name, grad_norms, model,
                      activations,
                      predictions, targets,  # Denormalized
                      predictions_norm, targets_norm,  # Normalized

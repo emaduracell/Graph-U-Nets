@@ -4,9 +4,9 @@ import yaml
 import os
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from defplate_dataset import add_w_edges_radius
-from model_entire import GraphUNet_DefPlate
-from data_loader import load_config
+from data.defplate_dataset import add_w_edges_radius
+from model.model_entire import GraphUNet_DefPlate
+from data.data_loader import load_config
 
 OUTPUT_DIR = "simulation_rollout"
 BOUNDARY_NODE = 3
@@ -488,10 +488,6 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
 
     return coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list, dynamic_edges_list
 
-
-
-# MAIN VISUALIZATION LOGIC
-
 def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, dim_in, render_mode, rollout_steps,
          traj_idx, t_step, rollout_set, preprocessed_path, add_world_edges, checkpoint_path):
     # ---------------------- LOAD DATA ----------------------
@@ -723,16 +719,18 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
 
 if __name__ == "__main__":
     # Visualization settings  [374,356,302,387] overfit_traj_id: 2
-    traj_idx = 0
+    traj_idx = 2
     t_step = 10  # time index t (visualize t -> t+1)
     rollout_set = True  # if True, run multi-step rollout
-    rollout_steps = 10  # maximum number of rollout steps for multi-step visualization
+    rollout_steps = 50  # maximum number of rollout steps for multi-step visualization
     render_mode = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
     preprocessed_path = config['training']['datapath']
     add_world_edges = config['training']['add_world_edges']
-    checkpoint_path = ((config['training']['model_path'] + "model_" + preprocessed_path.rsplit("/", 1)[0]) + "_" +
+    # checkpoint_path = ((config['training']['model_path'] + "model_" + preprocessed_path.rsplit("/", 1)[0]) + "_" +
+    #                    add_world_edges)
+    checkpoint_path = (("model_out_8traj/" + "model_" + preprocessed_path.rsplit("/", 1)[0]) + "_" +
                        add_world_edges)
     if "True" in preprocessed_path:
         print("\n\nTrue\n\n")

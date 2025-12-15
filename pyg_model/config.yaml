@@ -29,4 +29,3 @@ training:
   mode: "overfit"    # "standard" or "overfit"
   overfit_traj_id: [0]   # trajectory id to overfit on
   overfit_time_idx: [0,1,2,3]  # list of time indices to overfit on (null = all in traj)
-
