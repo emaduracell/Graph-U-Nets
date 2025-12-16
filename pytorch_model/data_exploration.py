@@ -248,7 +248,8 @@ def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_wo
 
     # Unpack tensors
     A = traj["A"]
-    A = A[t_step]
+    if A.ndim == 3:
+        A = A[t_step]
     X_seq_norm = traj["X_seq_norm"]  # [T, N, F]
     mean = traj["mean"]  # [1, 1, F]
     std = traj["std"]  # [1, 1, F]

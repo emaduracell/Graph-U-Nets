@@ -462,7 +462,7 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
         raise ValueError(f"Preprocessed data not found at {preprocessed_path}")
     traj = list_of_trajs[traj_idx]
 
-    A = traj["A"]  # [T,N,N]
+    A = traj["A"]  # [T,N,N] or [N,N] if static
     X_seq_norm = traj["X_seq_norm"]  # [T,N,F]
     mean = traj["mean"]  # [1,1,F]
     std = traj["std"]  # [1,1,F]
@@ -474,15 +474,12 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
     # Reconstruct clean base_A from cells for rollout (mesh only)
     # This ensures we don't carry over world edges from the dataset
     num_nodes = X_seq_norm.shape[1]
-    # Check if cells is tensor
     if isinstance(cells, torch.Tensor):
         cells_np = cells.cpu().numpy()
     else:
         cells_np = cells
-        
     base_A_clean = build_adjacency_matrix(cells_np, num_nodes).to(device)
-
-    A = base_A_clean
+    A = base_A_clean  # Always use clean mesh adjacency for rollout
 
     X_seq_norm = X_seq_norm.to(device)
     mean = mean.to(device)

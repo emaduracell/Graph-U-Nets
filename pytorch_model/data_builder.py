@@ -295,7 +295,7 @@ def apply_normalization(list_of_trajs, mean, std_dev):
         traj['X_seq_norm'] = X_seq_norm
 
 
-def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict):
+def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict, a_time_var):
     """
     Process a single trajectory: decode, build features, and create trajectory dict.
 
@@ -351,30 +351,34 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
     )
     time_start = time.time()
     
-    A_dynamic_list = []
-    dynamic_edges_list = []
-    
-    # Iterate over all time steps to compute dynamic A
-    for t in range(time_step_dim):
-        pos_t = torch.tensor(world_pos[t], dtype=torch.float32)
+    if a_time_var:
+        # Time-varying adjacency: compute per time step
+        A_dynamic_list = []
+        dynamic_edges_list = []
+        for t in range(time_step_dim):
+            pos_t = torch.tensor(world_pos[t], dtype=torch.float32)
+            node_type_t = torch.tensor(node_type_raw.squeeze(), dtype=torch.long)
+            A_dynamic_t, dynamic_edges_t = add_w_edges(edge_config, A, node_type_t, pos_t)
+            A_dynamic_list.append(A_dynamic_t)
+            dynamic_edges_list.append(dynamic_edges_t)
+        A_out = torch.stack(A_dynamic_list, dim=0)  # [T, N, N]
+        world_edges_out = dynamic_edges_list
+    else:
+        # Static adjacency: compute once at t=0
+        pos_t = torch.tensor(world_pos[0], dtype=torch.float32)
         node_type_t = torch.tensor(node_type_raw.squeeze(), dtype=torch.long)
-        A_dynamic_t, dynamic_edges_t = add_w_edges(edge_config, A, node_type_t, pos_t)
-        
-        A_dynamic_list.append(A_dynamic_t)
-        dynamic_edges_list.append(dynamic_edges_t)
+        A_static, dynamic_edges_static = add_w_edges(edge_config, A, node_type_t, pos_t)
+        A_out = A_static  # [N, N]
+        world_edges_out = dynamic_edges_static  # single tensor for compatibility
 
-    # Time tracking ends
     compute_duration = time.time() - time_start
-    # print(f"[process_single_trajectory] Added world edges for {time_step_dim} steps in {compute_duration:.4f}s")
+    # print(f\"[process_single_trajectory] Added world edges in {compute_duration:.4f}s\")
     
-    # Stack A matrices: [T, N, N]
-    A_dynamic_seq = torch.stack(A_dynamic_list, dim=0)
-
     # ensure cells and node_type are tensors, passing them to plot border and sphere separately (not predicted)
     cells_tensor = torch.tensor(mesh_cells, dtype=torch.long)
     node_type_tensor = torch.tensor(node_type_raw.squeeze(-1), dtype=torch.long)
-    dict_traj = {"A": A_dynamic_seq, "X_seq_norm": X_feat, "mean": 0, "std": 0, "cells": cells_tensor,
-                 "node_type": node_type_tensor, "world_edge_index": dynamic_edges_list}
+    dict_traj = {\"A\": A_out, \"X_seq_norm\": X_feat, \"mean\": 0, \"std\": 0, \"cells\": cells_tensor,
+                 \"node_type\": node_type_tensor, \"world_edge_index\": world_edges_out}
 
     return dict_traj, X_feat
 
@@ -409,6 +413,7 @@ def load_all_trajectories(dataconfig):
     add_world_edges_dict = {'add_world_edges': dataconfig['add_world_edges'],
                             'radius_world_edge': dataconfig['radius_world_edge'],
                             'k_neighb':dataconfig['k_neighb']}
+    a_time_var = dataconfig.get('a_time_var', False)
 
     if norm_method not in ['centroid', 'standard', 'row']:
         raise ValueError(f"norm_method == {norm_method} not supported")
@@ -432,7 +437,7 @@ def load_all_trajectories(dataconfig):
             break
 
         traj = cast_trajectory_from_record(record, meta)
-        dict_traj, X_feat = process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict)
+        dict_traj, X_feat = process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict, a_time_var)
         list_of_trajs.append(dict_traj)
 
     mean, element_num = compute_global_mean(list_of_trajs)
