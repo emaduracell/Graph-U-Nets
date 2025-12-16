@@ -323,8 +323,8 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
     # ensure cells and node_type are tensors, passing them to plot border and sphere separately (not predicted)
     cells_tensor = torch.tensor(mesh_cells, dtype=torch.long)
     node_type_tensor = torch.tensor(node_type_raw.squeeze(-1), dtype=torch.long)
-    dict_traj = {"A": A, "X_seq_norm": X_feat, "mean": 0, "std": 0, "cells": cells_tensor,
-                 "node_type": node_type_tensor}
+    dict_traj = {"A": A_dynamic, "X_seq_norm": X_feat, "mean": 0, "std": 0, "cells": cells_tensor,
+                 "node_type": node_type_tensor, "world_edge_index": dynamic_edges}
 
     return dict_traj, X_feat
 
