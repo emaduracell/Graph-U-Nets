@@ -2,13 +2,10 @@ import os
 import yaml
 import torch
 from torch_geometric.loader import DataLoader
-
 import torch.nn.functional as F
-
 from pyg_data import GraphUNetTFRecordDataset
 from pyg_model import GraphUNetDefPlatePyG
 from pyg_plots import make_final_plots
-
 from torch_geometric.transforms import Compose
 from pyg_transform import InjectKinematicVelocity, AddDynamicWorldEdges
 
@@ -56,7 +53,7 @@ def compute_loss(preds, targets, node_type):
     stress_loss = torch.tensor(0.0, device=preds.device)
 
     if vel_count > 0:
-        vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
+        vel_loss = F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])
         loss = loss + weight_vel * vel_loss
     if stress_count > 0:
         stress_loss = F.huber_loss(pred_stress[stress_mask], target_stress[stress_mask])
@@ -80,7 +77,7 @@ def compute_mae(preds, targets, node_type):
     return mae_sum, count
 
 
-def train_epoch(model, loader, optimizer, device):
+def train_epoch(model, loader, optimizer, device, transform=None):
     model.train()
     total_loss = 0.0
     total_vel_loss = 0.0
@@ -90,6 +87,10 @@ def train_epoch(model, loader, optimizer, device):
 
     for batch in loader:
         batch = batch.to(device)
+        
+        if transform is not None:
+            batch = transform(batch)
+
         optimizer.zero_grad()
         preds = model(batch.x, batch.edge_index, batch=batch.batch if hasattr(batch, "batch") else None)
         loss, vel_loss, stress_loss = compute_loss(preds, batch.y, batch.node_type)
@@ -112,7 +113,7 @@ def train_epoch(model, loader, optimizer, device):
 
 
 @torch.no_grad()
-def eval_epoch(model, loader, device):
+def eval_epoch(model, loader, device, transform=None):
     model.eval()
     total_loss = 0.0
     total_vel_loss = 0.0
@@ -122,6 +123,10 @@ def eval_epoch(model, loader, device):
 
     for batch in loader:
         batch = batch.to(device)
+        
+        if transform is not None:
+            batch = transform(batch)
+
         preds = model(batch.x, batch.edge_index, batch=batch.batch if hasattr(batch, "batch") else None)
         loss, vel_loss, stress_loss = compute_loss(preds, batch.y, batch.node_type)
 
@@ -173,10 +178,14 @@ def main():
         ),
         allowed_traj_ids=data_cfg.get("selected_traj_ids"),
         allowed_time_ids=data_cfg.get("selected_time_ids"),
-        transform=physics_transform
+        transform=None 
     )
 
     mode = train_cfg.get("mode", "standard")
+    
+    num_workers = train_cfg.get("num_workers", 0)
+    pin_memory = True if num_workers > 0 else False
+    persistent_workers = True if num_workers > 0 else False
 
     if mode == "overfit":
         overfit_traj = train_cfg.get("overfit_traj_id")
@@ -193,14 +202,16 @@ def main():
             ),
             allowed_traj_ids=[overfit_traj],
             allowed_time_ids=overfit_time_idx,
-            transform=physics_transform 
+            transform=None
         )
         
         train_loader = DataLoader(
             dataset,
             batch_size=len(dataset),
             shuffle=False,
-            num_workers=train_cfg.get("num_workers", 0),
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers
         )
         val_loader = train_loader
         print(f"Overfitting on traj_id={overfit_traj} with {len(dataset)} samples"
@@ -221,13 +232,17 @@ def main():
             train_set,
             batch_size=train_cfg.get("batch_size", 2),
             shuffle=train_cfg.get("shuffle", True),
-            num_workers=train_cfg.get("num_workers", 0),
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers
         )
         val_loader = DataLoader(
             val_set,
             batch_size=train_cfg.get("batch_size", 2),
             shuffle=False,
-            num_workers=train_cfg.get("num_workers", 0),
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers
         )
 
     # File Dim (12) + Kinematic Injection (3) = 15
@@ -257,8 +272,8 @@ def main():
     val_vel_losses, val_stress_losses = [], []
 
     for epoch in range(epochs):
-        tr_loss, tr_vel, tr_str, tr_mae = train_epoch(model, train_loader, optimizer, device)
-        val_loss, val_vel, val_str, val_mae = eval_epoch(model, val_loader, device)
+        tr_loss, tr_vel, tr_str, tr_mae = train_epoch(model, train_loader, optimizer, device, transform=physics_transform)
+        val_loss, val_vel, val_str, val_mae = eval_epoch(model, val_loader, device, transform=physics_transform)
 
         train_losses.append(tr_loss)
         val_losses.append(val_loss)
@@ -295,6 +310,7 @@ def main():
     with torch.no_grad():
         for batch in val_loader:
             batch = batch.to(device)
+            batch = physics_transform(batch)
             preds = model(batch.x, batch.edge_index, batch=batch.batch if hasattr(batch, "batch") else None)
             
             # Denormalization

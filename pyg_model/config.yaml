@@ -18,17 +18,17 @@ data:
 # Training parameters (single GPU)
 training:
   lr: 0.0001
-  epochs: 1000
-  batch_size: 32
+  epochs: 500
+  batch_size: 64
   shuffle: false
-  weight_decay: 0.0
+  weight_decay: 0.0001
   val_split: 0.2
   seed: 42
   num_workers: 16
   radius: 0.03
   device: "cuda"       # "auto", "cpu", "cuda", or "mps"
   checkpoint_path: "pyg_graph_unet.pt"
-  mode: "overfit"    # "standard" or "overfit"
+  mode: "standard"    # "standard" or "overfit"
   overfit_traj_id: [0]   # trajectory id to overfit on
   overfit_time_idx: [0,1,2,3]  # list of time indices to overfit on (null = all in traj)
 
