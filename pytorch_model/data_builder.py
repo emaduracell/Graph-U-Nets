@@ -6,6 +6,9 @@ import os
 from helpers.helpers import get_feature_indices, load_config
 from pytorch_model.helpers.helpers import print_debug_nodetype, print_debug_shapes_dataloader
 from data.decode_tfrecord_utils import cast_trajectory_from_record
+from data.add_world_edges import add_w_edges
+from types import SimpleNamespace
+import time
 
 NORMAL_NODE_OH = [0, 0]  # value 0 (NORMAL)
 NORMAL_NODE = 0
@@ -71,7 +74,7 @@ def build_velocity(world_pos, mode):
         for t in range(1, time_step_dim):
             vel[t] = world_pos[t] - world_pos[t - 1]
     elif mode == "actuator":
-        for t in range(1, time_step_dim):
+        for t in range(1, time_step_dim - 1):
             vel[t] = world_pos[t+1] - world_pos[t]
 
     return vel
@@ -125,34 +128,11 @@ def build_feature_sequence(world_pos, vel, stress, node_type_onehot, mesh_pos,
     node_type_floatcast = node_type_onehot.astype(np.float32)
 
     for t in range(time_step_dim):
-        if norm_method == "centroid":
-            # Compute frame centroid for world_pos
-            centroid_world = world_pos[t].mean(axis=0)  # [3]
-            centered_world_pos = world_pos[t] - centroid_world
-
-            if include_mesh_pos:
-                # Compute frame centroid for mesh_pos (static, but done per frame for consistency if needed, though mesh_pos is static)
-                # Actually mesh_pos is static [N, 3], so we compute its centroid once per traj
-                centroid_mesh = mesh_pos.mean(axis=0)
-                centered_mesh_pos = mesh_pos - centroid_mesh
-
-            # This removes the rigid/global translation component of velocity
-            centroid_vel = vel[t].mean(axis=0)  # [3]
-            vel_centered = vel[t] - centroid_vel  # [N,3]
-
-            if include_mesh_pos:
-                feats_t = np.concatenate([centered_mesh_pos, centered_world_pos, node_type_floatcast,
-                                          vel_centered, stress[t]], axis=-1)
-            else:
-                feats_t = np.concatenate([centered_world_pos, node_type_floatcast, vel_centered,
-                                          stress[t]], axis=-1)
-
+        if include_mesh_pos:
+            feats_t = np.concatenate([mesh_pos, world_pos[t], node_type_floatcast, vel[t], stress[t]],
+                                     axis=-1)
         else:
-            if include_mesh_pos:
-                feats_t = np.concatenate([mesh_pos, world_pos[t], node_type_floatcast, vel[t], stress[t]],
-                                         axis=-1)
-            else:
-                feats_t = np.concatenate([world_pos[t], node_type_floatcast, vel[t], stress[t]], axis=-1)
+            feats_t = np.concatenate([world_pos[t], node_type_floatcast, vel[t], stress[t]], axis=-1)
 
         feats_list.append(feats_t)
 
@@ -200,69 +180,6 @@ def compute_global_mean(list_of_trajs):
         element_num = element_num + X_feat.shape[0] * X_feat.shape[1]
     mean = sum_elements / element_num
     return mean, element_num
-
-
-def compute_centroid_normalization(list_of_trajs, mean, element_num, feat_idx, include_mesh_pos):
-    """
-    Compute normalization statistics using centroid method.
-
-    Args:
-        list_of_trajs: List
-            List of trajectory dicts
-        mean: torch.Tensor
-            Global mean
-        element_num: int
-            Total number of elements
-        feat_idx: object
-            Feature indices
-        include_mesh_pos: bool
-            Whether mesh positions are included
-        mean: torch.Tensor
-            Adjusted mean
-
-    :return std_dev: torch.Tensor
-        Standard deviation
-    """
-    # Force velocity mean to 0
-    mean[feat_idx.velocity] = VELOCITY_MEAN
-
-    # 2. Compute Global Standard Deviation
-    # We need to re-iterate to calculate variance correctly
-    accumulated_variance = torch.zeros_like(mean)
-    for traj in list_of_trajs:
-        X = traj['X_seq_norm']
-        # For velocity, since we forced mean=0, this computes sum(v^2), which leads to RMS
-        accumulated_variance += ((X - mean.view(1, 1, -1)) ** 2).sum(dim=(0, 1))
-    # Standard Deviation (or RMS for velocity)
-    std_dev = torch.sqrt(accumulated_variance / (element_num - 1))
-
-    # B. World Position: Isotropic Std across x, y, z
-    # Since we centered positions per-frame, the mean is ~0.
-    pos_variances = accumulated_variance[feat_idx.world_pos]
-    pos_std_isotropic = torch.sqrt(pos_variances.sum() / ((element_num - 1) * 3))
-    std_dev[feat_idx.world_pos] = pos_std_isotropic
-
-    if include_mesh_pos:
-        # C. Mesh Position: Isotropic Std across x, y, z
-        mesh_variances = accumulated_variance[feat_idx.mesh_pos]
-        mesh_std_isotropic = torch.sqrt(mesh_variances.sum() / ((element_num - 1) * 3))
-        std_dev[feat_idx.mesh_pos] = mesh_std_isotropic
-
-    # 4. Isotropic scaling for Velocity
-    # max_std_vel = std_dev[VELOCITY_INDEXES].max()
-    # std_dev[VELOCITY_INDEXES] = max_std_vel
-    vel_variances = accumulated_variance[feat_idx.world_pos]  # Shape [3]
-    # Sum of squared errors for all 3 components / (Total Elements * 3)
-    # Note: element_num is N*T. The total count for 3 components is element_num * 3
-    vel_rms = torch.sqrt(vel_variances.sum() / ((element_num - 1) * 3))
-    std_dev[feat_idx.world_pos] = vel_rms
-
-    # 5. Node Type: keep one-hot (no normalization)
-    # mean is already computed, but we force it to 0 and std to 1 for node types
-    mean[feat_idx.nodetype] = 0.0
-    std_dev[feat_idx.nodetype] = 1.0
-
-    return mean, std_dev
 
 
 def compute_standard_normalization(list_of_trajs, mean, element_num, feat_idx, include_mesh_pos):
@@ -340,7 +257,7 @@ def apply_normalization(list_of_trajs, mean, std_dev):
         traj['X_seq_norm'] = X_seq_norm
 
 
-def process_single_trajectory(traj, include_mesh_pos, norm_method, idx):
+def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict):
     """
     Process a single trajectory: decode, build features, and create trajectory dict.
 
@@ -374,8 +291,9 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx):
     # Build velocity
     vel_normal = build_velocity(world_pos, mode="normal")
     vel_actuator_tp1 = build_velocity(world_pos, mode="actuator")
-    # FIXME SEE IF THIS ACTUALLY DOES WHAT IT SHOULD DO
-    vel_normal[node_type == SPHERE_NODE] = vel_actuator_tp1[node_type == SPHERE_NODE]
+    actuator_mask = (node_type == SPHERE_NODE).reshape(-1)  # Shape (N,)
+    print(f"[process_single_trajectory] actuator_mask={actuator_mask}")
+    vel_normal[:, actuator_mask, :] = vel_actuator_tp1[:, actuator_mask, :]
 
     # One hot node type
     node_type_onehot, node_type_raw = build_onehot_nodetype(node_type)
@@ -387,6 +305,20 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx):
 
     # Build adjacency matrix from set
     A = build_adjacency_matrix(mesh_cells, number_of_nodes)
+
+    edge_config = SimpleNamespace(
+        add_world_edges=add_world_edges_dict["add_world_edges"],  # Options: 'radius', 'neighbours', 'None'
+        radius=add_world_edges_dict["radius_world_edge"],  # Adjust radius
+        k_neighb=add_world_edges_dict["k_neighb"]  # Adjust k neighbors
+    )
+    time_start = time.time()
+    pos_t = torch.tensor(world_pos[0], dtype=torch.float32)
+    node_type_t = torch.tensor(node_type_raw.squeeze(), dtype=torch.long)
+    A_dynamic, dynamic_edges = add_w_edges(edge_config, A, node_type_t, pos_t)
+
+    # Time tracking ends
+    compute_duration = time.time() - time_start
+    print(f"[process_single_trajectory] Added {dynamic_edges.shape[1]} edges in {compute_duration:.4f}s")
 
     # ensure cells and node_type are tensors, passing them to plot border and sphere separately (not predicted)
     cells_tensor = torch.tensor(mesh_cells, dtype=torch.long)
@@ -424,6 +356,10 @@ def load_all_trajectories(dataconfig):
     meta_path = dataconfig['meta_path']
     max_trajs = dataconfig['max_trajs']
 
+    add_world_edges_dict = {'add_world_edges': dataconfig['add_world_edges'],
+                            'radius_world_edge': dataconfig['radius_world_edge'],
+                            'k_neighb':dataconfig['k_neighb']}
+
     if norm_method not in ['centroid', 'standard']:
         raise ValueError(f"norm_method == {norm_method} not supported")
 
@@ -444,24 +380,13 @@ def load_all_trajectories(dataconfig):
             print("[load_all_trajectories] Reached wanted number of trajectories")
             break
 
-        # DECODE RAW TRAJECTORY
         traj = cast_trajectory_from_record(record, meta)
-
-        dict_traj, X_feat = process_single_trajectory(traj, include_mesh_pos, norm_method, idx)
+        dict_traj, X_feat = process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict)
         list_of_trajs.append(dict_traj)
 
-    # Now that positions are centered per frame/traj, mean is approx 0 for positions.
-    # We still compute global mean/std for normalization.
-
     mean, element_num = compute_global_mean(list_of_trajs)
-
-    if norm_method == "centroid":
-        mean, std_dev = compute_centroid_normalization(list_of_trajs, mean, element_num,
+    mean, std_dev = compute_standard_normalization(list_of_trajs, mean, element_num,
                                                        feat_idx, include_mesh_pos)
-    else:
-        mean, std_dev = compute_standard_normalization(list_of_trajs, mean, element_num,
-                                                       feat_idx, include_mesh_pos)
-
     apply_normalization(list_of_trajs, mean, std_dev)
 
     print(f"\nLoaded {len(list_of_trajs)} trajectories.")

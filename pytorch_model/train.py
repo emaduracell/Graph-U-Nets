@@ -12,7 +12,7 @@ from typing import List, Tuple
 from dataclasses import dataclass
 from helpers.evaluation_helper import run_final_evaluation
 from helpers.helpers import (format_training_time, create_model_hyperparams, load_config, load_trajectories,
-                             print_training_config, setup_paths, get_feature_indices, get_device)
+                             print_training_config, setup_paths, get_feature_indices, get_device, print_overfit_samples)
 
 # Constants
 BOUNDARY_NODE = 3
@@ -36,9 +36,19 @@ class TrainingHistory:
     def create_empty(cls) -> 'TrainingHistory':
         return cls([], [], [], [], [], [], [])
 
-def _create_standard_dataloaders(dataset: DefPlateDataset, batch_size: int, shuffle: bool, num_workers: int,
-                                pin_memory: bool) -> Tuple[DataLoader, DataLoader]:
-    """Create train/test dataloaders with 80/20 split."""
+def _create_standard_dataloaders(dataset, batch_size, shuffle, num_workers, pin_memory):
+    """
+    Create train/test dataloaders with 80/20 split.
+
+    Args:
+        dataset: DefPlateDataset
+        batch_size: int
+        shuffle: bool
+        num_workers: int
+        pin_memory: bool
+
+    :return: Tuple[DataLoader, DataLoader]
+    """
     total = len(dataset)
     perm = torch.randperm(total)
     split = int(0.8 * total)
@@ -56,8 +66,18 @@ def _create_standard_dataloaders(dataset: DefPlateDataset, batch_size: int, shuf
 
     return train_loader, test_loader
 
-def _create_overfit_dataloader(dataset: DefPlateDataset, overfit_traj_id: int, overfit_time_idx_list: List[int]) -> DataLoader:
-    """Create a dataloader for overfitting on specific samples."""
+def _create_overfit_dataloader(dataset, overfit_traj_id, overfit_time_idx_list):
+    """
+    Create a dataloader for overfitting on specific samples.
+
+    Args:
+        dataset: DefPlateDataset
+        overfit_traj_id: int
+        overfit_time_idx_list: List[int]
+
+    :return: DataLoader
+    """
+
     overfit_indices = []
 
     for idx in range(len(dataset)):
@@ -82,9 +102,20 @@ def _create_overfit_dataloader(dataset: DefPlateDataset, overfit_traj_id: int, o
     return loader
 
 
-def compute_loss(adj_A_list: list, feat_tp1_mat_list: list, node_types_list: list, preds_list: list,
-                 velocity_idxs: slice, stress_idxs: slice) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Compute loss per batch."""
+def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list, velocity_idxs, stress_idxs):
+    """
+    Compute loss per batch.
+
+    Args:
+        adj_A_list: list
+        feat_tp1_mat_list: list
+        node_types_list: list
+        preds_list: list
+        velocity_idxs: slice
+        stress_idxs: slice
+    :return: (total_loss / num_graphs, total_vel_loss / num_graphs, total_stress_loss / num_graphs)
+        every element of the tuple is a torch.Tensor
+    """
     total_loss = 0.0
     total_vel_loss = 0.0
     total_stress_loss = 0.0
@@ -99,9 +130,20 @@ def compute_loss(adj_A_list: list, feat_tp1_mat_list: list, node_types_list: lis
     return (total_loss / num_graphs, total_vel_loss / num_graphs, total_stress_loss / num_graphs)
 
 
-def _compute_single_graph_loss(pred: torch.Tensor, target: torch.Tensor, nodetype: torch.Tensor, velocity_idxs: slice,
-    stress_idxs: slice) -> Tuple[float, float]:
-    """Compute loss for a single graph."""
+def _compute_single_graph_loss(pred, target, nodetype, velocity_idxs,
+    stress_idxs):
+    """
+    Compute loss for a single graph.
+
+    Args:
+        pred: torch.Tensor
+        target: torch.Tensor
+        nodetype: torch.Tensor
+        velocity_idxs: slice
+        stress_idxs: slice
+
+    :return: (vel_loss, stress_loss)
+    """
     vel_mask = (nodetype == NORMAL_NODE)
     stress_mask = (nodetype == NORMAL_NODE) | (nodetype == BOUNDARY_NODE)
 
@@ -133,9 +175,19 @@ def _get_grad_norm(model: torch.nn.Module) -> float:
 
 
 @torch.no_grad()
-def _validate_one_epoch(model: torch.nn.Module, test_loader: DataLoader, device: torch.device, velocity_idxs: slice,
-                       stress_idxs: slice) -> Tuple[float, float, float]:
-    """Run one validation epoch. Returns (avg_loss, avg_vel_loss, avg_stress_loss)."""
+def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs):
+    """
+    Run one validation epoch.
+
+    Args:
+        model: torch.nn.Module
+        test_loader: DataLoader
+        device: torch.device
+        velocity_idxs: slice
+        stress_idxs: slice
+
+    :return: (avg_loss, avg_vel_loss, avg_stress_loss)
+    """
     model.eval()
     total_loss = 0.0
     total_vel_loss = 0.0
@@ -161,9 +213,20 @@ def _validate_one_epoch(model: torch.nn.Module, test_loader: DataLoader, device:
     return total_loss / n, total_vel_loss / n, total_stress_loss / n
 
 
-def _train_one_epoch(model: torch.nn.Module, train_loader: DataLoader, optimizer: torch.optim.Optimizer,
-                    device: torch.device, velocity_idxs: slice, stress_idxs: slice) -> Tuple[float, float, float, float]:
-    """Run one training epoch. Returns (avg_loss, avg_vel_loss, avg_stress_loss, avg_grad_norm)."""
+def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stress_idxs):
+    """
+    Run one training epoch. Returns (avg_loss, avg_vel_loss, avg_stress_loss, avg_grad_norm).
+    Args:
+        model: torch.nn.Module
+        train_loader: DataLoader
+        optimizer: torch.optim.Optimizer
+        device: torch.device
+        velocity_idxs: slice
+        stress_idxs: slice
+
+    :return: (total_loss, total_vel_loss, total_stress_loss, total_grad_norm)
+        floats of averaged loss for that epoch
+    """
     model.train()
     total_loss = 0.0
     total_vel_loss = 0.0
@@ -230,8 +293,7 @@ def train_gunet(device, num_workers, pin_memory):
     list_of_trajs = load_trajectories(train_cfg['datapath'], train_cfg['num_train_trajs'])
 
     # Build dataset from these trajectories
-    dataset = DefPlateDataset(list_of_trajs, add_world_edges=train_cfg['add_world_edges'],
-                              world_pos_idxs=feat_idx.world_pos, velocity_idxs=feat_idx.velocity)
+    dataset = DefPlateDataset(list_of_trajs, world_pos_idxs=feat_idx.world_pos, velocity_idxs=feat_idx.velocity)
     print(f"Total training pairs (X_t, X_t+1): {len(dataset)}")
 
     # Create dataloaders based on mode
