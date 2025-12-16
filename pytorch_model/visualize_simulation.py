@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 from data.defplate_dataset import add_w_edges_radius
 from model.gunet_deforming_plate import GraphUNet_DefPlate
 from data.data_builder import build_adjacency_matrix
+from helpers.helpers import get_feature_indices
 
 OUTPUT_DIR = "simulation_rollout"
 BOUNDARY_NODE = 3
@@ -288,7 +289,7 @@ def apply_render_mode(pos_true, pos_pred, stress_true, stress_pred, node_type_tr
 # MULTI-STEP ROLLOUT (USING VELOCITY PREDICTIONS)
 
 def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_idxs, stress_idxs, node_type_idxs,
-            world_pos_idxs, add_world_edges):
+            world_pos_idxs, add_world_edges, radius):
     """
     Autoregressive rollout that:
       - predicts plate velocities + stresses,
@@ -336,23 +337,10 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
     current_norm = X_seq_norm[t0].to(device)  # [N,F] or [1,N,F]
     if current_norm.dim() == 3:
         current_norm = current_norm[0]
-
-    # --- NEW: Append next-step velocity for kinematic nodes (from GROUND TRUTH at t0+1) ---
-    # For the very first step (k=0), we need v_rigid^{t0+1}.
-    gt_norm_next_initial = X_seq_norm[t0 + 1].to(device)
-    if gt_norm_next_initial.dim() == 3:
-        gt_norm_next_initial = gt_norm_next_initial[0]
     
-    v_next_norm_initial = gt_norm_next_initial[:, vel_idxs]
-    kinematic_vel_input_initial = torch.zeros_like(v_next_norm_initial)
-    kinematic_vel_input_initial[rigid_mask] = v_next_norm_initial[rigid_mask]
-    
-    # Concatenate to initial current_norm
-    current_norm = torch.cat([current_norm, kinematic_vel_input_initial], dim=-1)
-    
-    current_phys = current_norm[:, :-3] * std_vec + mean_vec  # [N,F] (Exclude the appended kinematic vel)
+    current_phys = current_norm * std_vec + mean_vec  # [N,F]
     # This is p_hat_0 := p_0 (ground truth at t0)
-    p_hat = current_phys[:, :3].clone()  # [N,3]
+    p_hat = current_phys[:, world_pos_idxs].clone()  # [N,3]
 
     # Borders reference positions (fixed in time)
     pos_border_ref = p_hat[border_mask].clone()  # [Nb,3]
@@ -369,8 +357,7 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
         # The paper says world edges are based on spatial proximity in world space.
         # radius=0.03 from paper for deforming plate
         if add_world_edges:
-            # FIXME: HARDCODED, LOAD FROM DATA INSTEAD
-            A_dynamic, dyn_edges = add_w_edges_radius(base_A, node_type, p_hat, radius=0.03)
+            A_dynamic, dyn_edges = add_w_edges_radius(base_A, node_type, p_hat, radius=radius)
         else:
             A_dynamic = base_A
             dyn_edges = None
@@ -452,37 +439,6 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
         # Re-normalize for next model input (graph at time k+1)
         current_phys = X_next_phys
         current_norm = (X_next_phys - mean_vec) / std_vec
-
-        # --- NEW: Append next-step velocity for kinematic nodes (from GROUND TRUTH) ---
-        # In rollout, we must use the FUTURE ground-truth velocity of the kinematic nodes to predict step k+1.
-        # This mirrors what we did in DefPlateDataset.__getitem__.
-
-        # Get next step ground truth for kinematic velocity (at t0 + 1 + k + 1)
-        # Note: We are predicting state k+1. To predict k+2, we would need velocity at k+2.
-        # Actually, wait. The model at step 'k' predicts 'k+1'. It needs input at 'k'.
-        # The input at 'k' includes "next step velocity" v^{k+1} for kinematic nodes.
-        # So we need v_rigid^{k+1} (normalized) to be concatenated to current_norm.
-
-        # We already have `gt_norm_step` which corresponds to time t0 + 1 + k. This is the TARGET state of the current step.
-        # Wait, the loop runs for `steps`.
-        # At iteration k=0:
-        #   Input: state at t0.
-        #   Target: state at t0+1.
-        #   We need v_rigid^{t0+1} as extra input.
-        #   `gt_norm_step` loaded above is X_seq_norm[t0 + 1 + k]. For k=0, this is t0+1.
-        #   So `gt_norm_step` contains the velocity we need!
-
-        # Extract normalized velocity from the target/next-step GT
-        v_next_norm_all = gt_norm_step[:, vel_idxs] # [N, 3]
-
-        # Mask: keep only rigid (sphere) nodes, zero elsewhere
-        kinematic_vel_input = torch.zeros_like(v_next_norm_all)
-        kinematic_vel_input[rigid_mask] = v_next_norm_all[rigid_mask]
-
-        # Concatenate to current_norm
-        # current_norm shape: [N, F]
-        # kinematic_vel_input shape: [N, 3]
-        current_norm = torch.cat([current_norm, kinematic_vel_input], dim=-1)
 
         # Advance p_hat_k -> p_hat_{k+1}
         p_hat = p_hat_next
@@ -601,7 +557,8 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
         stress_idxs=stress_idxs,
         node_type_idxs=node_type_idxs,
         world_pos_idxs=world_pos_idxs,
-        add_world_edges=add_world_edges
+        add_world_edges=add_world_edges,
+        radius=dataconfig.get('radius_world_edge', 0.03)
     )
 
     pos_pred = coords_pred_list[0]
@@ -669,7 +626,9 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
         stress_idxs=stress_idxs,
         node_type_idxs=node_type_idxs,
         world_pos_idxs=world_pos_idxs,
-        add_world_edges=add_world_edges)
+        add_world_edges=add_world_edges,
+        radius=dataconfig.get('radius_world_edge', 0.03)
+    )
 
     # ---- visualize each step ----
     for k in range(steps):
@@ -741,26 +700,30 @@ if __name__ == "__main__":
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
     preprocessed_path = config['training']['datapath']
+    
+    # Load used_dataconfig.yaml to get data processing parameters
+    used_dataconfig_path = os.path.join(preprocessed_path, "used_dataconfig.yaml")
+    if os.path.exists(used_dataconfig_path):
+        dataconfig = load_config(used_dataconfig_path)
+    else:
+        print(f"Warning: {used_dataconfig_path} not found. Using defaults.")
+        dataconfig = {'include_mesh_pos': True, 'radius_world_edge': 0.03} # Default fallback
+
+    include_mesh_pos = dataconfig['include_mesh_pos']
     add_world_edges = config['training']['add_world_edges']
-    # checkpoint_path = ((config['training']['model_path'] + "model_" + preprocessed_path.rsplit("/", 1)[0]) + "_" +
-    #                    add_world_edges)
+    
     checkpoint_path = (("model_out_8traj/" + "model_" + preprocessed_path.rsplit("/", 1)[0]) + "_" +
                        add_world_edges)
-    if "True" in preprocessed_path:
-        print("\n\nTrue\n\n")
-        mesh_pos_idxs = slice(0, 3)
-        world_pos_idxs = slice(3, 6)
-        node_type_idxs = slice(6, 8)
-        vel_idxs = slice(8, 11)
-        stress_idxs = slice(11, 12)
-        dim_in = 12 + 3  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1) + kinematic_vel_tp1
-    else:
-        mesh_pos_idxs = None
-        world_pos_idxs = slice(0, 3)
-        node_type_idxs = slice(3, 5)
-        vel_idxs = slice(5, 8)
-        stress_idxs = slice(8, 9)
-        dim_in = 9 + 3  # world_pos (3) + node_type (2) + vel (3) + stress (1) + kinematic_vel_tp1
+                       
+    # Use helper to get feature indices
+    feat_idx = get_feature_indices(include_mesh_pos)
+    
+    mesh_pos_idxs = feat_idx.mesh_pos
+    world_pos_idxs = feat_idx.world_pos
+    node_type_idxs = feat_idx.nodetype
+    vel_idxs = feat_idx.velocity
+    stress_idxs = feat_idx.stress
+    dim_in = feat_idx.dim_in
 
     main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, dim_in, render_mode, rollout_steps,
          traj_idx, t_step, rollout_set, preprocessed_path, add_world_edges, checkpoint_path)
