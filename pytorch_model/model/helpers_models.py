@@ -51,7 +51,8 @@ def norm_g(g):
     :return: g
         new row-normalized adjacency matrix
     """
-    degrees = torch.sum(g, dim=1)
+    degrees = torch.sum(g, dim=1, keepdim=True)
+    degrees = degrees.clamp(min=1e-12)
     g = g / degrees
     return g
 
