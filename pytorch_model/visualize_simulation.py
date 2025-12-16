@@ -37,13 +37,6 @@ def make_dynamic_edges_trace(coords, edge_index):
         dst = edge_index[1]
 
     x_lines, y_lines, z_lines = [], [], []
-    # Vectorized construction for Plotly lines (point, point, None)
-    # We can interleave: X[src], X[dst], None
-    # shape [E, 3] -> flatten
-
-    # We want a sequence: x_s1, x_d1, None, x_s2, x_d2, None ...
-    # Create array of shape [3, E] -> [x_src, x_dst, nan]
-    # Then transpose to [E, 3] and flatten
 
     nan_vec = np.full(src.shape, None)
 
@@ -453,25 +446,6 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
         current_phys = X_next_phys
         current_norm = (X_next_phys - mean_vec) / std_vec
 
-        # --- NEW: Append next-step velocity for kinematic nodes (from GROUND TRUTH) ---
-        # In rollout, we must use the FUTURE ground-truth velocity of the kinematic nodes to predict step k+1.
-        # This mirrors what we did in DefPlateDataset.__getitem__.
-
-        # Get next step ground truth for kinematic velocity (at t0 + 1 + k + 1)
-        # Note: We are predicting state k+1. To predict k+2, we would need velocity at k+2.
-        # Actually, wait. The model at step 'k' predicts 'k+1'. It needs input at 'k'.
-        # The input at 'k' includes "next step velocity" v^{k+1} for kinematic nodes.
-        # So we need v_rigid^{k+1} (normalized) to be concatenated to current_norm.
-
-        # We already have `gt_norm_step` which corresponds to time t0 + 1 + k. This is the TARGET state of the current step.
-        # Wait, the loop runs for `steps`.
-        # At iteration k=0:
-        #   Input: state at t0.
-        #   Target: state at t0+1.
-        #   We need v_rigid^{t0+1} as extra input.
-        #   `gt_norm_step` loaded above is X_seq_norm[t0 + 1 + k]. For k=0, this is t0+1.
-        #   So `gt_norm_step` contains the velocity we need!
-
         # Extract normalized velocity from the target/next-step GT
         v_next_norm_all = gt_norm_step[:, vel_idxs] # [N, 3]
 
@@ -733,10 +707,10 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
 
 if __name__ == "__main__":
     # Visualization settings  [374,356,302,387] overfit_traj_id: 2
-    traj_idx = 2
-    t_step = 10  # time index t (visualize t -> t+1)
+    traj_idx = 0
+    t_step = 0  # time index t (visualize t -> t+1)
     rollout_set = True  # if True, run multi-step rollout
-    rollout_steps = 50  # maximum number of rollout steps for multi-step visualization
+    rollout_steps = 10  # maximum number of rollout steps for multi-step visualization
     render_mode = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
@@ -746,6 +720,7 @@ if __name__ == "__main__":
     #                    add_world_edges)
     checkpoint_path = (("model_out_8traj/" + "model_" + preprocessed_path.rsplit("/", 1)[0]) + "_" +
                        add_world_edges)
+
     if "True" in preprocessed_path:
         print("\n\nTrue\n\n")
         mesh_pos_idxs = slice(0, 3)
@@ -753,14 +728,14 @@ if __name__ == "__main__":
         node_type_idxs = slice(6, 8)
         vel_idxs = slice(8, 11)
         stress_idxs = slice(11, 12)
-        dim_in = 12 + 3  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1) + kinematic_vel_tp1
+        dim_in = 12  # mesh_pos (3) + world_pos (3) + node_type (2) + vel (3) + stress (1)
     else:
         mesh_pos_idxs = None
         world_pos_idxs = slice(0, 3)
         node_type_idxs = slice(3, 5)
         vel_idxs = slice(5, 8)
         stress_idxs = slice(8, 9)
-        dim_in = 9 + 3  # world_pos (3) + node_type (2) + vel (3) + stress (1) + kinematic_vel_tp1
+        dim_in = 9  # world_pos (3) + node_type (2) + vel (3) + stress (1)
 
     main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, dim_in, render_mode, rollout_steps,
          traj_idx, t_step, rollout_set, preprocessed_path, add_world_edges, checkpoint_path)
