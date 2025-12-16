@@ -5,7 +5,6 @@ from model.gcn_model import GCN
 from model.pool_model import Pool
 from model.unpool_op import Unpool
 
-
 class GraphUnet(nn.Module):
     """
     Original GraphUnet
@@ -36,7 +35,7 @@ class GraphUnet(nn.Module):
         self.up_gcns = nn.ModuleList()
         self.pools = nn.ModuleList()
         self.unpools = nn.ModuleList()
-        self.l_n = len(ks)
+        self.l_n = ks
         self.adj_norm_fn = get_adj_norm_fn(adj_norm)
         for i in range(self.l_n):
             self.down_gcns.append(GCN(dim, dim, act, drop_p, adj_norm=adj_norm))
@@ -63,9 +62,8 @@ class GraphUnet(nn.Module):
             h = self.down_gcns[i](g, h)
             adj_ms.append(g)
             down_outs.append(h)
-            if i >= 3:
-                g, h, idx = self.pools[i](g, h)
-                indices_list.append(idx)
+            g, h, idx = self.pools[i](g, h)
+            indices_list.append(idx)
         # Bottom GCN before starting going up
         h = self.bottom_gcn(g, h)
         # Unpool --> GCN --> repeat until last GCN

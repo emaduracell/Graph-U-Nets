@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from model.gunet_original import GraphUnet
+from model.gunet_nopool import GraphUnetNoPool
 from model.gcn_model import GCN
 from model.initializer import Initializer
 from model.helpers_models import get_adj_norm_fn
@@ -68,8 +69,17 @@ class GraphUNet_DefPlate(nn.Module):
         # Initial GCN
         self.start_gcn = GCN(in_dim, hid_gnn_layer_dim, self.act_gnn, dropout_gnn, adj_norm)
         # Graph U-Net
-        self.g_unet = GraphUnet(
-            ks=k_pool_ratios,
+        # self.g_unet = GraphUnet(
+        #     ks=k_pool_ratios,
+        #     in_dim=hid_gnn_layer_dim,  # in_dim  (from s_gcn)
+        #     out_dim=hid_gnn_layer_dim,  # out_dim (unused in this impl, kept for API)
+        #     dim=hid_gnn_layer_dim,
+        #     act=self.act_gnn,
+        #     drop_p=dropout_gnn,
+        #     adj_norm=adj_norm
+        # )
+        self.g_unet = GraphUnetNoPool(
+            num_layers=len(k_pool_ratios),
             in_dim=hid_gnn_layer_dim,  # in_dim  (from s_gcn)
             out_dim=hid_gnn_layer_dim,  # out_dim (unused in this impl, kept for API)
             dim=hid_gnn_layer_dim,
