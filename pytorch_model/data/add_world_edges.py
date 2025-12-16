@@ -54,12 +54,7 @@ def add_w_edges_neigh(base_A, node_types, pos_t, k):
     else:
         dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=A_t.device)
 
-    # Normalize new adjacency matrix TODO NOTE: ROW WISE
-    row_sums = A_t.sum(dim=1, keepdim=True)
-    row_sums[row_sums == 0] = 1.0
-    A_norm = A_t / row_sums
-
-    return A_norm, dynamic_edges
+    return A_t, dynamic_edges
 
 
 def add_w_edges_radius(base_A, node_types, pos_t, radius):
@@ -94,16 +89,13 @@ def add_w_edges_radius(base_A, node_types, pos_t, radius):
     binary_mesh = mesh_edge_mask.float()
     binary_world = valid_world_mask.float()
     A_combined = binary_mesh + binary_world
-    row_sums = A_combined.sum(dim=1, keepdim=True)
-    row_sums[row_sums == 0] = 1.0
-    A_norm = A_combined / row_sums
 
     # Extract edge list for world edges (for return)
     dynamic_edges = torch.nonzero(binary_world, as_tuple=False).t()
     if dynamic_edges.numel() == 0:
          dynamic_edges = torch.empty((2, 0), dtype=torch.long, device=pos_t.device)
 
-    return A_norm, dynamic_edges
+    return A_combined, dynamic_edges
 
 
 def add_w_edges(self, base_A, node_types, pos_t):

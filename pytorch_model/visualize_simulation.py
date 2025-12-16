@@ -369,6 +369,7 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
         # The paper says world edges are based on spatial proximity in world space.
         # radius=0.03 from paper for deforming plate
         if add_world_edges:
+            # FIXME: HARDCODED, LOAD FROM DATA INSTEAD
             A_dynamic, dyn_edges = add_w_edges_radius(base_A, node_type, p_hat, radius=0.03)
         else:
             A_dynamic = base_A

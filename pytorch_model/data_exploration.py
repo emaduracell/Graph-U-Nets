@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import os
 import plotly.graph_objects as go
-from data.defplate_dataset import add_w_edges_radius
+from data.add_world_edges import add_w_edges_radius
 
 # Constants
 BOUNDARY_NODE = 3
