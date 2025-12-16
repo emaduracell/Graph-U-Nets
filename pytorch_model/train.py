@@ -164,7 +164,7 @@ def _compute_single_graph_loss(pred, target, nodetype, velocity_idxs,
     return vel_loss, stress_loss
 
 
-def _get_grad_norm(model: torch.nn.Module) -> float:
+def _get_grad_norm(model):
     """Get gradient norm of current batch (L2)."""
     total_norm = 0.0
     for p in model.parameters():

@@ -60,7 +60,7 @@ def setup_paths(train_cfg):
     return checkpoint_path, plots_dir
 
 
-def create_model_hyperparams(model_cfg: dict):
+def create_model_hyperparams(model_cfg):
     """Create model hyperparameters object from config."""
     hyperparams = lambda: None
     hyperparams.activation_gnn = model_cfg['activation_gnn']

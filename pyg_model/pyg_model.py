@@ -9,15 +9,15 @@ class GraphUNetDefPlatePyG(nn.Module):
     PyG Graph U-Net with separate heads for velocity (3) and stress (1).
     """
 
-    def __init__(
-        self,
-        in_channels: int,
-        hidden_channels: int,
-        depth: int,
-        pool_ratios,
-        mlp_hidden: int,
-        mlp_dropout: float = 0.0,
-    ):
+    def __init__(self, in_channels, hidden_channels, depth, pool_ratios, mlp_hidden, mlp_dropout):
+        """
+        in_channels: int
+        hidden_channels: int
+        depth: int
+        pool_ratios: int
+        mlp_hidden: int
+        mlp_dropout: float
+        """
         super().__init__()
 
         self.gunet = GraphUNet(

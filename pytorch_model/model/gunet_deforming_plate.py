@@ -27,8 +27,7 @@ class GraphUNet_DefPlate(nn.Module):
         adjacency matrix normalization function
     """
 
-    def __init__(self, in_dim, vel_out_dim, stress_out_dim, model_config_hyperparams,
-                 adj_norm):
+    def __init__(self, in_dim, vel_out_dim, stress_out_dim, model_config_hyperparams, adj_norm):
         """
         Creates an instance of the Graph-U-Net
 

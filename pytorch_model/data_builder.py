@@ -233,6 +233,44 @@ def compute_standard_normalization(list_of_trajs, mean, element_num, feat_idx, i
     return mean, std_dev
 
 
+def compute_row_normalization(list_of_trajs, mean, element_num):
+    """
+    Compute normalization statistics component-wise (row-wise) for all features.
+    Unlike standard normalization, this does NOT average stats across x,y,z coordinates.
+
+    Args:
+        list_of_trajs: List
+            List of trajectory dicts
+        mean: torch.Tensor
+            Global mean (calculated component-wise by compute_global_mean)
+        element_num: int
+            Total number of elements
+
+    :return mean: torch.Tensor
+        The original component-wise mean
+    :return std_dev: torch.Tensor
+        Component-wise standard deviation
+    """
+    std_acc = torch.zeros_like(mean)
+
+    # Broadcast mean to (1, 1, F) for subtraction
+    mean_b = mean.view(1, 1, -1)
+
+    for traj in list_of_trajs:
+        X = traj['X_seq_norm']
+        # Sum squared differences per component: Sum over T(0) and N(1), keep F
+        std_acc += ((X - mean_b) ** 2).sum(dim=(0, 1))
+
+    # Calculate standard deviation
+    std_dev = torch.sqrt(std_acc / (element_num - 1))
+
+    # Stability check: If a feature is constant (e.g., specific node types or 2D constraints),
+    # std_dev will be 0. We set it to 1.0 to avoid NaN during division.
+    # This effectively makes the normalization X - mean for those features.
+    std_dev[std_dev < 1e-8] = 1.0
+
+    return mean, std_dev
+
 def apply_normalization(list_of_trajs, mean, std_dev):
     """
     Apply normalization to all trajectories.
@@ -284,7 +322,7 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
     mesh_pos = None
     if include_mesh_pos:
         mesh_pos = traj["mesh_pos"]
-    print_debug_shapes_dataloader(node_type, idx, mesh_pos, traj, include_mesh_pos, mesh_cells, stress, world_pos)
+    # print_debug_shapes_dataloader(node_type, idx, mesh_pos, traj, include_mesh_pos, mesh_cells, stress, world_pos)
 
     time_step_dim, number_of_nodes, _ = world_pos.shape
 
@@ -292,7 +330,7 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
     vel_normal = build_velocity(world_pos, mode="normal")
     vel_actuator_tp1 = build_velocity(world_pos, mode="actuator")
     actuator_mask = (node_type == SPHERE_NODE).reshape(-1)  # Shape (N,)
-    print(f"[process_single_trajectory] actuator_mask={actuator_mask}")
+    # print(f"[process_single_trajectory] actuator_mask={actuator_mask}")
     vel_normal[:, actuator_mask, :] = vel_actuator_tp1[:, actuator_mask, :]
 
     # One hot node type
@@ -327,7 +365,7 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
 
     # Time tracking ends
     compute_duration = time.time() - time_start
-    print(f"[process_single_trajectory] Added world edges for {time_step_dim} steps in {compute_duration:.4f}s")
+    # print(f"[process_single_trajectory] Added world edges for {time_step_dim} steps in {compute_duration:.4f}s")
     
     # Stack A matrices: [T, N, N]
     A_dynamic_seq = torch.stack(A_dynamic_list, dim=0)
@@ -372,7 +410,7 @@ def load_all_trajectories(dataconfig):
                             'radius_world_edge': dataconfig['radius_world_edge'],
                             'k_neighb':dataconfig['k_neighb']}
 
-    if norm_method not in ['centroid', 'standard']:
+    if norm_method not in ['centroid', 'standard', 'row']:
         raise ValueError(f"norm_method == {norm_method} not supported")
 
     feat_idx = get_feature_indices(include_mesh_pos)
@@ -387,6 +425,7 @@ def load_all_trajectories(dataconfig):
 
     # Iterate through trajectories
     for traj_idx, record in enumerate(loader):
+        print(f"processing trajectory {traj_idx}")
         # Stop if we reached max_trajs
         if max_trajs is not None and traj_idx >= max_trajs:
             print("[load_all_trajectories] Reached wanted number of trajectories")
@@ -397,8 +436,15 @@ def load_all_trajectories(dataconfig):
         list_of_trajs.append(dict_traj)
 
     mean, element_num = compute_global_mean(list_of_trajs)
-    mean, std_dev = compute_standard_normalization(list_of_trajs, mean, element_num,
+
+    if norm_method == "standard":
+        mean, std_dev = compute_standard_normalization(list_of_trajs, mean, element_num,
                                                        feat_idx, include_mesh_pos)
+    elif norm_method == "row":
+        mean, std_dev = compute_row_normalization(list_of_trajs, mean, element_num)
+    else:
+        raise ValueError(f"[load_all_trajectories] norm_method={norm_method}")
+
     apply_normalization(list_of_trajs, mean, std_dev)
 
     print(f"\nLoaded {len(list_of_trajs)} trajectories.")

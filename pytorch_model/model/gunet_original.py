@@ -5,6 +5,7 @@ from model.gcn_model import GCN
 from model.pool_model import Pool
 from model.unpool_op import Unpool
 
+
 class GraphUnet(nn.Module):
     """
     Original GraphUnet
@@ -47,8 +48,9 @@ class GraphUnet(nn.Module):
         """
         Forward pass in all the GraphUnet.
 
-        :param g: input graph.
-        :param h: ????
+        Args:
+            g: input graph.
+            h: ????
         :return: hs prediction
         """
         adj_ms = []
@@ -61,8 +63,9 @@ class GraphUnet(nn.Module):
             h = self.down_gcns[i](g, h)
             adj_ms.append(g)
             down_outs.append(h)
-            g, h, idx = self.pools[i](g, h)
-            indices_list.append(idx)
+            if i >= 3:
+                g, h, idx = self.pools[i](g, h)
+                indices_list.append(idx)
         # Bottom GCN before starting going up
         h = self.bottom_gcn(g, h)
         # Unpool --> GCN --> repeat until last GCN

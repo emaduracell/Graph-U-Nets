@@ -4,10 +4,10 @@ import yaml
 import os
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from data.defplate_dataset import add_w_edges_radius
+from data.add_world_edges import add_w_edges_radius
 from model.gunet_deforming_plate import GraphUNet_DefPlate
-from data.data_builder import build_adjacency_matrix
-from helpers.helpers import get_feature_indices
+from data_builder import build_adjacency_matrix
+from helpers.helpers import get_feature_indices, load_config
 
 OUTPUT_DIR = "simulation_rollout"
 BOUNDARY_NODE = 3
@@ -521,7 +521,7 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
 
     # dim_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
-    model = GraphUNet_DefPlate(dim_in, 3, 1, myargs).to(device)
+    model = GraphUNet_DefPlate(dim_in, 3, 1, myargs, adj_norm=model_cfg['adj_norm']).to(device)
     state = torch.load(checkpoint_path, map_location=device)
 
     # Backwards compatibility: old checkpoints used "s_gcn" instead of "start_gcn"
@@ -692,28 +692,27 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
 
 if __name__ == "__main__":
     # Visualization settings  [374,356,302,387] overfit_traj_id: 2
-    traj_idx = 2
-    t_step = 10  # time index t (visualize t -> t+1)
+    traj_idx = 0
+    t_step = 5  # time index t (visualize t -> t+1)
     rollout_set = True  # if True, run multi-step rollout
-    rollout_steps = 50  # maximum number of rollout steps for multi-step visualization
+    rollout_steps = 10  # maximum number of rollout steps for multi-step visualization
     render_mode = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
-    preprocessed_path = config['training']['datapath']
+    preprocessed_path = config['training']['datapath'] + "/preprocessed_train.pt"
     
     # Load used_dataconfig.yaml to get data processing parameters
-    used_dataconfig_path = os.path.join(preprocessed_path, "used_dataconfig.yaml")
+    used_dataconfig_path = os.path.join(config['training']['datapath'], "used_dataconfig.yaml")
     if os.path.exists(used_dataconfig_path):
         dataconfig = load_config(used_dataconfig_path)
     else:
-        print(f"Warning: {used_dataconfig_path} not found. Using defaults.")
-        dataconfig = {'include_mesh_pos': True, 'radius_world_edge': 0.03} # Default fallback
-
+        raise ValueError(f"Warning: {used_dataconfig_path} not found. Using defaults.")
     include_mesh_pos = dataconfig['include_mesh_pos']
-    add_world_edges = config['training']['add_world_edges']
-    
-    checkpoint_path = (("model_out_8traj/" + "model_" + preprocessed_path.rsplit("/", 1)[0]) + "_" +
-                       add_world_edges)
+    add_world_edges = dataconfig['add_world_edges']
+
+    dataset_name = os.path.basename(os.path.normpath(config['training']["datapath"]))
+    out_dir = os.path.join(config['training']["model_path_out"], dataset_name)
+    checkpoint_path = os.path.join(out_dir, "model.pt")
                        
     # Use helper to get feature indices
     feat_idx = get_feature_indices(include_mesh_pos)

@@ -322,8 +322,8 @@ if __name__ == "__main__":
     METADATA_FILE = os.path.join(DATA_DIR, "preprocessed_metadata.pt")
 
     # Visualization Settings: change this to your preference
-    TRAJ_IDX = 0
-    TIME_STEP = 5
+    TRAJ_IDX = 9
+    TIME_STEP = 288
     RENDER_MODE = "all"
 
     main(RENDER_MODE, TRAJ_IDX, TIME_STEP, PREPROCESSED_FILE, METADATA_FILE, NORM_METHOD, INCLUDE_MESH_POS)
