@@ -3,7 +3,7 @@ import numpy as np
 import os
 import torch
 import textwrap
-from helpers import load_config
+from helpers.helpers import load_config
 
 
 def _flatten_dict(d, parent_key=""):
@@ -55,14 +55,10 @@ def to_cpu_numpy(x):
 # INDIVIDUAL PLOTTING FUNCTIONS
 # ------------------------------------------------------------------------------
 
-def plot_loss_curves(save_dir, epochs, train_losses, val_losses, train_metrics, val_metrics, metric_name, model_cfg,
-                     train_cfg):
+def plot_loss_curves(save_dir, epochs, train_losses, val_losses, model_cfg, train_cfg):
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, train_losses, label='Train Loss')
     plt.plot(epochs, val_losses, label='Val Loss')
-    if train_metrics is not None and val_metrics is not None:
-        plt.plot(epochs, train_metrics, label=f'Train {metric_name}', linestyle='--')
-        plt.plot(epochs, val_metrics, label=f'Val {metric_name}', linestyle='--')
     plt.xlabel('Epoch')
     plt.ylabel('Value')
     plt.title('Training/Validation Loss and Metric vs Epoch')
@@ -210,17 +206,14 @@ def plot_residuals(save_dir, feature_labels, iter_targets, iter_predictions, mod
 # MAIN PLOTTING FUNCTION
 # ------------------------------------------------------------------------------
 
-def make_final_plots(save_dir, train_losses, val_losses, metric_name, grad_norms, model,
-                     activations,
-                     predictions, targets,  # Denormalized
+def make_final_plots(save_dir, train_losses, val_losses, grad_norms, model,
+                     activations, predictions, targets,  # Denormalized
                      predictions_norm, targets_norm,  # Normalized
                      train_vel_losses, train_stress_losses, test_vel_losses,
-                     test_stress_losses, velocity_idxs, stress_idxs):
+                     test_stress_losses, velocity_idxs, stress_idxs, config_path):
     # 1. Prepare Data (Convert to CPU Numpy)
     train_losses = to_cpu_numpy(train_losses)
     val_losses = to_cpu_numpy(val_losses)
-    train_metrics = to_cpu_numpy(train_metrics) if train_metrics is not None else None
-    val_metrics = to_cpu_numpy(val_metrics) if val_metrics is not None else None
     grad_norms = to_cpu_numpy(grad_norms)
     train_stress = to_cpu_numpy(train_stress_losses)
     train_vel = to_cpu_numpy(train_vel_losses)
@@ -253,7 +246,6 @@ def make_final_plots(save_dir, train_losses, val_losses, metric_name, grad_norms
 
     # 2. Load Config for Footer
     os.makedirs(save_dir, exist_ok=True)
-    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
     model_cfg = config['model']
     train_cfg = config['training']
@@ -261,8 +253,7 @@ def make_final_plots(save_dir, train_losses, val_losses, metric_name, grad_norms
 
     # 3. Call Plotting Functions
     print("Plotting Loss Curves...")
-    plot_loss_curves(save_dir, epochs, train_losses, val_losses, train_metrics, val_metrics, metric_name, model_cfg,
-                     train_cfg)
+    plot_loss_curves(save_dir, epochs, train_losses, val_losses, model_cfg, train_cfg)
 
     print("Plotting Component Losses...")
     plot_component_losses(save_dir, epochs, train_stress, train_vel, test_stress, test_vel, model_cfg, train_cfg)

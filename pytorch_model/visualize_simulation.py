@@ -5,7 +5,7 @@ import os
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data.defplate_dataset import add_w_edges_radius
-from model.gunet_model import GraphUNet_DefPlate
+from model.gunet_deforming_plate import GraphUNet_DefPlate
 from data.data_loader import load_config
 
 OUTPUT_DIR = "simulation_rollout"

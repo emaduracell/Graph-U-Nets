@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
-from helpers_models import get_adj_norm_fn
-from gcn_model import GCN
+from model.helpers_models import get_adj_norm_fn
+from model.gcn_model import GCN
+from model.pool_model import Pool
+from model.unpool_op import Unpool
 
 class GraphUnet(nn.Module):
     """
@@ -28,7 +30,7 @@ class GraphUnet(nn.Module):
     def __init__(self, ks, in_dim, out_dim, dim, act, drop_p, adj_norm):
         super(GraphUnet, self).__init__()
         self.ks = ks
-        self.bottom_gcn = GCN(dim, dim, act, drop_p)
+        self.bottom_gcn = GCN(dim, dim, act, drop_p, adj_norm)
         self.down_gcns = nn.ModuleList()
         self.up_gcns = nn.ModuleList()
         self.pools = nn.ModuleList()

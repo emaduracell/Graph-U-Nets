@@ -64,14 +64,12 @@ def collate_unet(batch):
     X_tp1_list = []
     mean_list = []
     std_list = []
-    dynamic_edges_list = []
     cells_list = []
     node_types_list = []
     traj_id_list = []
     time_idx_list = []
-    compute_times_list = []
 
-    for A, X_t, X_tp1, mean, std, cells, node_type, dyn_edges, traj_id, time_idx, comp_time in batch:
+    for A, X_t, X_tp1, mean, std, cells, node_type, traj_id, time_idx in batch:
         adjacency_mat_list.append(A)
         X_t_list.append(X_t)
         X_tp1_list.append(X_tp1)
@@ -81,8 +79,7 @@ def collate_unet(batch):
         node_types_list.append(node_type)
         traj_id_list.append(traj_id)
         time_idx_list.append(time_idx)
-        dynamic_edges_list.append(dyn_edges)
-        compute_times_list.append(comp_time)
 
     return (adjacency_mat_list, X_t_list, X_tp1_list, mean_list, std_list, cells_list,
-        node_types_list, dynamic_edges_list, traj_id_list, time_idx_list, compute_times_list)
+        node_types_list, traj_id_list, time_idx_list)
+    # base_A, X_t_input, X_tp1_target, traj["mean"], traj["std"], traj["cells"], node_types, traj_id, t

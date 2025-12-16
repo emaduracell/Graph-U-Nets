@@ -2,23 +2,14 @@ import torch
 import os
 from data_builder import load_all_trajectories
 from helpers.helpers import load_config
+import yaml
 
 def _preprocess_and_save(dataconfig):
     """
     Loads data using data_loader.py, then saves torch files for data and metadata in proper directory
 
     Args:
-        tfrecord_path:
-        meta_path:
-        output_dir:
-        max_trajs:
-        mesh_pos_idxs:
-        world_pos_idxs:
-        node_type_idxs:
-        velocity_idxs:
-        stress_idxs:
-        include_mesh_pos:
-        norm_method:
+        dataconfig
 
     :return:
     """
@@ -75,6 +66,12 @@ def _preprocess_and_save(dataconfig):
         print(f"  Note: Trajectories are saved in sequential order (0, 1, 2, ...)")
         print("=" * 60 + "\n")
 
+    # Save used dataconfig (identical to the one passed in)
+    used_cfg_path = os.path.join(output_dir, "used_dataconfig.yaml")
+    with open(used_cfg_path, "w") as f:
+        yaml.safe_dump(dataconfig, f, sort_keys=False)
+    print(f" Saved used dataconfig to: {used_cfg_path}")
+
     return output_path
 
 
@@ -83,17 +80,7 @@ def main(dataconfig):
     Access point function to generate data
 
     Args:
-        tfrecord_path:
-        meta_path:
-        max_trajs:
-        output_dir:
-        mesh_pos_idxs:
-        world_pos_idxs:
-        node_type_idxs:
-        velocity_idxs:
-        stress_idxs:
-        include_mesh_pos:
-        norm_method:
+        dataconfig
 
     :return: nothing
     """
@@ -103,5 +90,4 @@ def main(dataconfig):
 if __name__ == "__main__":
     dataconfig_path = os.path.join(os.path.dirname(__file__), "dataconfig.yaml")
     dataconfig = load_config(dataconfig_path)['data']
-
     main(dataconfig)

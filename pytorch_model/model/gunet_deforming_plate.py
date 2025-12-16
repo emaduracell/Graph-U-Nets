@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from graph_unet_layers import GCN, GraphUnet
-from initializer import Initializer
-from pytorch_model.model.helpers_models import get_adj_norm_fn
+from model.gunet_original import GraphUnet
+from model.gcn_model import GCN
+from model.initializer import Initializer
+from model.helpers_models import get_adj_norm_fn
 
 
 class GraphUNet_DefPlate(nn.Module):

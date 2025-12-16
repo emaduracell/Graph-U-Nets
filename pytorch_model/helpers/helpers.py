@@ -21,25 +21,44 @@ def load_config(config_path):
         config = yaml.safe_load(f)
     return config
 
-def format_training_time(seconds: float) -> str:
+def format_training_time(seconds):
     """Format training time as hours, minutes, seconds."""
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
     return f"{hours}h {minutes}m {secs}s"
 
-def setup_paths(train_cfg: dict) -> Tuple[str, str]:
-    """Set up checkpoint and plots directory paths."""
-    preprocessed_data_path = train_cfg['datapath']
-    add_world_edges = train_cfg['add_world_edges']
-    base_name = preprocessed_data_path.rsplit("/", 1)[0]
+# def setup_paths(train_cfg):
+#     """Set up checkpoint and plots directory paths."""
+#     preprocessed_data_path = train_cfg['datapath'] + "/preprocessed_train.pt"
+#     dataconfig = load_config(train_cfg['datapath'] + "/used_dataconfig.yaml")
+#     base_name = preprocessed_data_path.rsplit("/", 1)[0]
+#
+#     checkpoint_path = f"{train_cfg['model_path_out']}model_{base_name}/"
+#     plots_dir = os.path.join(f"{train_cfg['model_path_out']}model_{base_name}", "plots")
+#     return checkpoint_path, plots_dir
 
-    checkpoint_path = f"{train_cfg['model_path']}model_{base_name}_{add_world_edges}"
-    plots_dir = os.path.join(
-        os.path.dirname(__file__),
-        f"{train_cfg['model_path']}plots_{base_name}_{add_world_edges}"
-    )
+import os
+
+def setup_paths(train_cfg):
+    """
+    Creates:
+      model_out/<dataset_name>/model.pt
+      model_out/<dataset_name>/plots/
+    where <dataset_name> is the last folder of train_cfg['datapath']
+    """
+    dataset_name = os.path.basename(os.path.normpath(train_cfg["datapath"]))
+
+    out_dir = os.path.join(train_cfg["model_path_out"], dataset_name)
+    checkpoint_path = os.path.join(out_dir, "model.pt")
+    plots_dir = os.path.join(out_dir, "plots")
+
+    # Ensure directories exist
+    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(plots_dir, exist_ok=True)
+
     return checkpoint_path, plots_dir
+
 
 def create_model_hyperparams(model_cfg: dict):
     """Create model hyperparameters object from config."""
@@ -74,7 +93,7 @@ def print_training_config(train_cfg, train_loader):
     print(f"Number of trajectories: {train_cfg['num_train_trajs']}")
     print(f"Train loader batches: {len(train_loader)}\n")
 
-def get_device() -> torch.device:
+def get_device():
     """Determine the best available device."""
     if torch.backends.mps.is_available():
         return torch.device("mps")
@@ -82,19 +101,19 @@ def get_device() -> torch.device:
         return torch.device("cuda")
     return torch.device("cpu")
 
-def get_feature_indices(include_mesh_pos: bool) -> FeatureIndices:
+def get_feature_indices(include_mesh_pos):
     """Get feature indices based on whether mesh positions are included."""
     if include_mesh_pos:
         # mesh_pos(3) + world_pos(3) + node_type(2) + vel(3) + stress(1) + kinematic_vel_tp1(3)
         return FeatureIndices(mesh_pos = slice(0,3), world_pos=slice(3, 6), velocity=slice(8, 11), stress=slice(11, 12),
-                              dim_in=12 + 3, nodetype=slice(6,8))
+                              dim_in=12, nodetype=slice(6,8))
     else:
         # world_pos(3) + node_type(2) + vel(3) + stress(1) + kinematic_vel_tp1(3)
-        return FeatureIndices(world_pos=slice(0, 3), velocity=slice(5, 8), stress=slice(8, 9), dim_in=9 + 3,
+        return FeatureIndices(world_pos=slice(0, 3), velocity=slice(5, 8), stress=slice(8, 9), dim_in=9,
                               nodetype=slice(6,8), mesh_pos=None)
 
 
-def load_trajectories(data_path: str, num_train_trajs: Optional[int] = None) -> list:
+def load_trajectories_preprocessed(data_path, num_train_trajs):
     """Load preprocessed trajectories from disk."""
     if not os.path.exists(data_path):
         raise FileNotFoundError(
@@ -112,17 +131,13 @@ def load_trajectories(data_path: str, num_train_trajs: Optional[int] = None) -> 
     return list_of_trajs
 
 def print_overfit_samples(loader):
-    """
-    Print the samples being used for overfitting.
-    Args:
-        loader: DataLoader
-            data loader
-        """
     batch = next(iter(loader))
-    traj_ids, time_indices = batch[8], batch[9]
+    adj, X_t, X_tp1, mean, std, cells, node_types, traj_ids, time_indices = batch
+
     print("Overfitting on the following (traj_id, time_idx) pairs:")
     for i, (tr, ti) in enumerate(zip(traj_ids, time_indices)):
-        print(f"  sample {i:02d}: traj_id={int(tr)}, t={int(ti)}")
+        print(f"  sample {i:02d}: traj_id={tr}, t={ti}")
+
 
 def print_debug_shapes_dataloader(node_type, idx, mesh_pos, traj, include_mesh_pos, mesh_cells, stress, world_pos):
     if idx == 0 or idx == 1 or idx == 2:

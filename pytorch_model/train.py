@@ -5,13 +5,13 @@ from torch.utils.data import DataLoader, Subset
 import os
 import numpy as np
 from data.defplate_dataset import DefPlateDataset, collate_unet
-from model.gunet_model import GraphUNet_DefPlate
+from model.gunet_deforming_plate import GraphUNet_DefPlate
 from torch.optim.lr_scheduler import ExponentialLR
 import time
 from typing import List, Tuple
 from dataclasses import dataclass
 from helpers.evaluation_helper import run_final_evaluation
-from helpers.helpers import (format_training_time, create_model_hyperparams, load_config, load_trajectories,
+from helpers.helpers import (format_training_time, create_model_hyperparams, load_config, load_trajectories_preprocessed,
                              print_training_config, setup_paths, get_feature_indices, get_device, print_overfit_samples)
 
 # Constants
@@ -272,8 +272,10 @@ def train_gunet(device, num_workers, pin_memory):
     model_cfg = config['model']
     train_cfg = config['training']
     # Load train config
+    # datapath: processed_data/data_standard_True so add preprocessed_train.pt
     checkpoint_path, plots_dir = setup_paths(train_cfg)
-    include_mesh_pos = "False" not in train_cfg['datapath']
+    dataconfig = load_config(train_cfg['datapath'] + '/used_dataconfig.yaml')
+    include_mesh_pos = dataconfig['include_mesh_pos']
     feat_idx = get_feature_indices(include_mesh_pos)
     torch.manual_seed(train_cfg['random_seed'])
     np.random.seed(train_cfg['random_seed'])
@@ -290,7 +292,7 @@ def train_gunet(device, num_workers, pin_memory):
             f"Please run 'python preprocess_data.py' first to generate the preprocessed data."
         )
 
-    list_of_trajs = load_trajectories(train_cfg['datapath'], train_cfg['num_train_trajs'])
+    list_of_trajs = load_trajectories_preprocessed(train_cfg['datapath'] + "/preprocessed_train.pt", train_cfg['num_train_trajs'])
 
     # Build dataset from these trajectories
     dataset = DefPlateDataset(list_of_trajs, world_pos_idxs=feat_idx.world_pos, velocity_idxs=feat_idx.velocity)
@@ -355,8 +357,9 @@ def train_gunet(device, num_workers, pin_memory):
     return model, test_loader, history, feat_idx, plots_dir
 
 if __name__ == "__main__":
-    num_workers = 8
-    pin_memory = True
+    num_workers = 0
+    pin_memory = False
     device = get_device()
     model, test_loader, history, feat_idx, plots_dir = train_gunet(device, num_workers, pin_memory)
-    run_final_evaluation(model, test_loader, device, history, feat_idx.velocity, feat_idx.stress, plots_dir)
+    run_final_evaluation(model, test_loader, device, history, feat_idx.velocity, feat_idx.stress, plots_dir,
+                         config_path=os.path.join(os.path.dirname(__file__), "config.yaml"))
