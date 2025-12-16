@@ -505,7 +505,7 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
         raise ValueError(f"Preprocessed data not found at {preprocessed_path}")
     traj = list_of_trajs[traj_idx]
 
-    A = traj["A"]  # [N,N]
+    A = traj["A"]  # [T,N,N]
     X_seq_norm = traj["X_seq_norm"]  # [T,N,F]
     mean = traj["mean"]  # [1,1,F]
     std = traj["std"]  # [1,1,F]
@@ -513,6 +513,9 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
     node_type = traj["node_type"]  # [N]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    A = A[t_step]
+        
     A = A.to(device)
     X_seq_norm = X_seq_norm.to(device)
     mean = mean.to(device)

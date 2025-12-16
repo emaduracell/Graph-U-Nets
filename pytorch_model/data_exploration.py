@@ -248,6 +248,7 @@ def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_wo
 
     # Unpack tensors
     A = traj["A"]
+    A = A[t_step]
     X_seq_norm = traj["X_seq_norm"]  # [T, N, F]
     mean = traj["mean"]  # [1, 1, F]
     std = traj["std"]  # [1, 1, F]
@@ -289,15 +290,13 @@ def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_wo
     dynamic_edges = None
     if "world_edge_index" in traj:
         print("Using pre-computed world edges from data loader...")
-        dynamic_edges = traj["world_edge_index"]
-    elif add_world_edges:
-        print("Calculating ground truth world edges (radius check)...")
-        # We need tensors for the helper
-        base_A = A
-        # Use physical position tensor for distance calc
-        pos_tensor = X_t_phys[:, world_pos_idxs]
-        # add_w_edges_radius expects [N] node_type, [N,3] pos
-        _, dynamic_edges = add_w_edges_radius(base_A, node_type, pos_tensor, radius=0.03)
+        # Check if world_edge_index is a list (per timestep) or single tensor
+        if isinstance(traj["world_edge_index"], list):
+             dynamic_edges = traj["world_edge_index"][t_step]
+        else:
+             dynamic_edges = traj["world_edge_index"]
+    else:
+        print("No pre-computed world edges found.")
 
     # 6. Visualize
     print(f"Visualizing Trajectory {traj_idx} at Time Step {t_step}...")

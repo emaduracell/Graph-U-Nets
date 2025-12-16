@@ -312,19 +312,31 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
         k_neighb=add_world_edges_dict["k_neighb"]  # Adjust k neighbors
     )
     time_start = time.time()
-    pos_t = torch.tensor(world_pos[0], dtype=torch.float32)
-    node_type_t = torch.tensor(node_type_raw.squeeze(), dtype=torch.long)
-    A_dynamic, dynamic_edges = add_w_edges(edge_config, A, node_type_t, pos_t)
+    
+    A_dynamic_list = []
+    dynamic_edges_list = []
+    
+    # Iterate over all time steps to compute dynamic A
+    for t in range(time_step_dim):
+        pos_t = torch.tensor(world_pos[t], dtype=torch.float32)
+        node_type_t = torch.tensor(node_type_raw.squeeze(), dtype=torch.long)
+        A_dynamic_t, dynamic_edges_t = add_w_edges(edge_config, A, node_type_t, pos_t)
+        
+        A_dynamic_list.append(A_dynamic_t)
+        dynamic_edges_list.append(dynamic_edges_t)
 
     # Time tracking ends
     compute_duration = time.time() - time_start
-    print(f"[process_single_trajectory] Added {dynamic_edges.shape[1]} edges in {compute_duration:.4f}s")
+    print(f"[process_single_trajectory] Added world edges for {time_step_dim} steps in {compute_duration:.4f}s")
+    
+    # Stack A matrices: [T, N, N]
+    A_dynamic_seq = torch.stack(A_dynamic_list, dim=0)
 
     # ensure cells and node_type are tensors, passing them to plot border and sphere separately (not predicted)
     cells_tensor = torch.tensor(mesh_cells, dtype=torch.long)
     node_type_tensor = torch.tensor(node_type_raw.squeeze(-1), dtype=torch.long)
-    dict_traj = {"A": A_dynamic, "X_seq_norm": X_feat, "mean": 0, "std": 0, "cells": cells_tensor,
-                 "node_type": node_type_tensor, "world_edge_index": dynamic_edges}
+    dict_traj = {"A": A_dynamic_seq, "X_seq_norm": X_feat, "mean": 0, "std": 0, "cells": cells_tensor,
+                 "node_type": node_type_tensor, "world_edge_index": dynamic_edges_list}
 
     return dict_traj, X_feat
 
