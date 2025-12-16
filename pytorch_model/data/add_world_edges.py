@@ -83,7 +83,12 @@ def add_w_edges_radius(base_A, node_types, pos_t, radius):
 
     # Exclude existing mesh edges
     mesh_edge_mask = base_A > 0
-    valid_world_mask = radius_mask & (~mesh_edge_mask)
+
+    # Exclude sphere-sphere interactions
+    is_sphere = (node_types.to(pos_t.device) == SPHERE_NODE).view(-1)
+    sphere_sphere_mask = is_sphere.unsqueeze(1) & is_sphere.unsqueeze(0)
+
+    valid_world_mask = radius_mask & (~mesh_edge_mask) & (~sphere_sphere_mask)
 
     # Build combined adjacency and normalize
     binary_mesh = mesh_edge_mask.float()
