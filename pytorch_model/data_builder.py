@@ -413,7 +413,7 @@ def load_all_trajectories(dataconfig):
     add_world_edges_dict = {'add_world_edges': dataconfig['add_world_edges'],
                             'radius_world_edge': dataconfig['radius_world_edge'],
                             'k_neighb':dataconfig['k_neighb']}
-    a_time_var = dataconfig.get('a_time_var', False)
+    a_time_var = dataconfig.get('a_time_var')
 
     if norm_method not in ['centroid', 'standard', 'row']:
         raise ValueError(f"norm_method == {norm_method} not supported")
