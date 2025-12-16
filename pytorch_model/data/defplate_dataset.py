@@ -44,7 +44,13 @@ class DefPlateDataset(Dataset):
         traj = self.trajs[traj_id]
         X_t_input = traj["X_seq_norm"][t]
         X_tp1_target = traj["X_seq_norm"][t + 1]
-        base_A = traj["A"]
+        
+        # Check if A is dynamic [T, N, N] or static [N, N] (backward compatibility)
+        if traj["A"].ndim == 3:
+            base_A = traj["A"][t]
+        else:
+            base_A = traj["A"]
+            
         node_types = traj["node_type"]
 
         return base_A, X_t_input, X_tp1_target, traj["mean"], traj["std"], traj["cells"], node_types, traj_id, t

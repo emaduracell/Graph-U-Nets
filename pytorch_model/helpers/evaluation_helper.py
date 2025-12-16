@@ -104,7 +104,16 @@ def run_final_evaluation(model, test_loader, device, history, velocity_idxs, str
     model.eval()
     for i, batch in enumerate(test_loader):
         print(f"[run_final_evaluation] batch {i}")
-        adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, _, node_types, *_ = batch
+        adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, means, stds, _, node_types, _, time_indices = batch
+
+        # Handle dynamic adjacency (A might be [T, N, N])
+        processed_adj_list = []
+        for A, t_idx in zip(adj_mat_list, time_indices):
+            if A.ndim == 3:
+                processed_adj_list.append(A[t_idx])
+            else:
+                processed_adj_list.append(A)
+        adj_mat_list = processed_adj_list
 
         gs = [A.to(device) for A in adj_mat_list]
         hs = [X.to(device) for X in feat_t_mat_list]

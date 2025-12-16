@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from data.defplate_dataset import add_w_edges_radius
 from model.gunet_deforming_plate import GraphUNet_DefPlate
-from data.data_loader import load_config
+from data.data_builder import build_adjacency_matrix
 
 OUTPUT_DIR = "simulation_rollout"
 BOUNDARY_NODE = 3
@@ -361,7 +361,7 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
     stress_pred_list = []
     node_type_pred_list = []
     rollout_error_list = []
-    base_A = A.clone()  # Keep the static mesh safe
+    base_A = A.clone() 
     dynamic_edges_list = []  # Store edges for viz
     for k in range(steps):
         # Generate world edges for the current predicted state
@@ -515,9 +515,19 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    A = A[t_step]
+    # Reconstruct clean base_A from cells for rollout (mesh only)
+    # This ensures we don't carry over world edges from the dataset
+    num_nodes = X_seq_norm.shape[1]
+    # Check if cells is tensor
+    if isinstance(cells, torch.Tensor):
+        cells_np = cells.cpu().numpy()
+    else:
+        cells_np = cells
         
-    A = A.to(device)
+    base_A_clean = build_adjacency_matrix(cells_np, num_nodes).to(device)
+
+    A = base_A_clean
+
     X_seq_norm = X_seq_norm.to(device)
     mean = mean.to(device)
     std = std.to(device)
