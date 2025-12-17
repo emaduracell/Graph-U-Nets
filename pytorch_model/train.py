@@ -294,7 +294,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
 def train_gunet(device, num_workers, pin_memory):
     """Training loop"""
     # Load configuration from YAML
-    config_path = os.path.join(os.path.dirname(__file__), "pyg_config.yaml")
+    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
     # Extract model and training parameters
     model_cfg = config['model']
@@ -302,7 +302,7 @@ def train_gunet(device, num_workers, pin_memory):
     # Load train config
     # datapath: processed_data/data_standard_True so add preprocessed_train.pt
     checkpoint_path, plots_dir = setup_paths(train_cfg)
-    dataconfig = load_config(train_cfg['datapath'] + '/pyg_dataconfig.yaml')
+    dataconfig = load_config(train_cfg['datapath'] + '/used_dataconfig.yaml')
     include_mesh_pos = dataconfig['include_mesh_pos']
     feat_idx = get_feature_indices(include_mesh_pos)
     torch.manual_seed(train_cfg['random_seed'])

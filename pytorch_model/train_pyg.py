@@ -13,8 +13,8 @@ from torch.amp import autocast, GradScaler
 # Helpers and Data
 from helpers.helpers import (format_training_time, load_config, print_training_config,
                              setup_paths, get_feature_indices, get_device, print_overfit_samples)
-from data_builder import TrajectoryDataset
-from model.pyg_gunet import GraphUNet_DefPlate
+from data_builder_pyg import TrajectoryDataset
+from model.pyg_gunet_wrapper import GraphUNet_DefPlate
 
 # Constants
 BOUNDARY_NODE = 3
@@ -261,37 +261,39 @@ def train_pyg(device, num_workers):
 
     checkpoint_path, plots_dir = setup_paths(train_cfg)
 
-    # Load Dataconfig
-    dataconfig_path = os.path.join(train_cfg['datapath'], 'pyg_used_dataconfig.yaml')
+    # 1. Load the Data Config to find the 'dataset_root'
+    # Assuming datapath in train config points to the folder containing pyg_dataconfig.yaml
+    dataconfig_path = "pyg_dataconfig.yaml"  # Or path relative to train script
+    if not os.path.exists(dataconfig_path):
+        raise FileNotFoundError(f"Could not find data config at {dataconfig_path}")
     dataconfig = load_config(dataconfig_path)
+    # 2. Get Root
+    dataset_root = dataconfig['output_dir']
+
     include_mesh_pos = dataconfig['include_mesh_pos']
     feat_idx = get_feature_indices(include_mesh_pos)
 
     # Flags
-    amp_enabled = bool(train_cfg.get('amp'))
-    move_all_to_device = bool(train_cfg.get("move_all_to_device"))
-    mode = train_cfg.get('mode')
-    overfit_time_idx = train_cfg.get('overfit_time_idx') if mode == 'overfit' else None
+    amp_enabled = bool(train_cfg['amp'])
+    move_all_to_device = bool(train_cfg["move_all_to_device"])
+    mode = train_cfg['mode']
+    overfit_time_idx = train_cfg['overfit_time_idx'] if mode == 'overfit' else None
 
     print("\n=================================================")
     print(" LOADING PYG DATASET")
+    print(f" Source: {dataset_root}")
     print("=================================================\n")
-    dataset = TrajectoryDataset(root=train_cfg['datapath'], dataconfig=dataconfig)
-    print(f"Dataset loaded. Num trajectories: {len(dataset)}")
+
+    # 3. Instantiate Dataset
+    if not os.path.exists(os.path.join(dataset_root, 'processed', 'pyg_processed_data.pt')):
+        raise RuntimeError(f"Processed data not found in {dataset_root}. Please run data_builder_pyg.py first.")
+
+    dataset = TrajectoryDataset(root=dataset_root, dataconfig=dataconfig, pre_transform=None, transform=None)
+    print(f"Dataset loaded successfully. Num trajectories: {len(dataset)}")
 
     if move_all_to_device:
         print(f"[Data] Moving entire dataset to {device} for speed...")
-        if device.type == "cuda":
-            free, total = torch.cuda.mem_get_info()
-            print(f"[GPU Memory] Before: {free / 1024 ** 3:.2f} / {total / 1024 ** 3:.2f} GB")
-        # PyG InMemoryDataset stores everything in 'self.data' and 'self.slices'
         dataset.data = dataset.data.to(device)
-
-        if device.type == "cuda":
-            free, total = torch.cuda.mem_get_info()
-            print(f"[GPU Memory] After:  {free / 1024 ** 3:.2f} / {total / 1024 ** 3:.2f} GB")
-
-        # If data is on GPU, we must use 0 workers and no pinning
         num_workers = 0
 
     # Create Dataloaders
@@ -352,6 +354,6 @@ def train_pyg(device, num_workers):
 
 
 if __name__ == "__main__":
-    device = get_device(cuda=True)
+    device = get_device(cuda=False)
     # If using move_all_to_device, num_workers will be forced to 0 automatically
     train_pyg(device, num_workers=4)

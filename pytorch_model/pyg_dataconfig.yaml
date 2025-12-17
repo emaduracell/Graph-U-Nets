@@ -1,7 +1,7 @@
 # Paths
-tfrecord_path:
-meta_path:
-output_dir: ""
+tfrecord_path: "raw_data/train.tfrecord"
+meta_path: "raw_data/meta.json"
+output_dir: "processed_data_pyg/pyg_data"
 # Loading
 max_trajs: 100 # or e.g. 100
 include_mesh_pos: true # if traj["mesh_pos"] exists
