@@ -35,7 +35,7 @@ class GraphUnet(nn.Module):
         self.up_gcns = nn.ModuleList()
         self.pools = nn.ModuleList()
         self.unpools = nn.ModuleList()
-        self.l_n = ks
+        self.l_n = len(ks)
         self.adj_norm_fn = get_adj_norm_fn(adj_norm)
         for i in range(self.l_n):
             self.down_gcns.append(GCN(dim, dim, act, drop_p, adj_norm=adj_norm))

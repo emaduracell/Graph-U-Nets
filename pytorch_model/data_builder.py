@@ -9,6 +9,7 @@ from data.decode_tfrecord_utils import cast_trajectory_from_record
 from data.add_world_edges import add_w_edges
 from types import SimpleNamespace
 import time
+from model.helpers_models import get_adj_norm_fn
 
 NORMAL_NODE_OH = [0, 0]  # value 0 (NORMAL)
 NORMAL_NODE = 0
@@ -17,6 +18,17 @@ SPHERE_NODE = 1
 BOUNDARY_NODE_OH = [0, 1]  # value 3 (BOUNDARY)
 BOUNDARY_NODE = 3
 VELOCITY_MEAN = 0.0
+
+
+def _normalize_adjacency(A: torch.Tensor, adj_norm_fn):
+    """
+    Normalize adjacency once (supports [N,N] or [T,N,N]).
+    """
+    if A.dim() == 2:
+        return adj_norm_fn(A)
+    if A.dim() == 3:
+        return torch.stack([adj_norm_fn(A_t) for A_t in A], dim=0)
+    raise ValueError(f"Adjacency must be 2D or 3D, got {tuple(A.shape)}")
 
 
 def build_edges_from_cells(mesh_cells):
@@ -295,7 +307,7 @@ def apply_normalization(list_of_trajs, mean, std_dev):
         traj['X_seq_norm'] = X_seq_norm
 
 
-def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict, a_time_var):
+def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict, a_time_var, adj_norm_fn):
     """
     Process a single trajectory: decode, build features, and create trajectory dict.
 
@@ -371,6 +383,9 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
         A_out = A_static  # [N, N]
         world_edges_out = dynamic_edges_static  # single tensor for compatibility
 
+    # Normalize adjacency once here (no per-forward normalization later)
+    A_out = _normalize_adjacency(A_out, adj_norm_fn)
+
     # compute_duration = time.time() - time_start
     # print(f"[process_single_trajectory] Added world edges in {compute_duration:.4f}s")
     
@@ -414,6 +429,8 @@ def load_all_trajectories(dataconfig):
                             'radius_world_edge': dataconfig['radius_world_edge'],
                             'k_neighb':dataconfig['k_neighb']}
     a_time_var = dataconfig.get('a_time_var')
+    adj_norm = dataconfig.get('adj_norm')
+    adj_norm_fn = get_adj_norm_fn(adj_norm)
 
     print(dataconfig['add_world_edges'])
     if dataconfig['add_world_edges'] not in ['radius', 'k_neighb', 'None']:
@@ -440,7 +457,8 @@ def load_all_trajectories(dataconfig):
             break
 
         traj = cast_trajectory_from_record(record, meta)
-        dict_traj, X_feat = process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict, a_time_var)
+        dict_traj, X_feat = process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict,
+                                                     a_time_var, adj_norm_fn)
         list_of_trajs.append(dict_traj)
 
     mean, element_num = compute_global_mean(list_of_trajs)

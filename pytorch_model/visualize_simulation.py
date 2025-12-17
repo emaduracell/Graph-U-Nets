@@ -8,6 +8,7 @@ from data.add_world_edges import add_w_edges_radius
 from model.gunet_deforming_plate import GraphUNet_DefPlate
 from data_builder import build_adjacency_matrix
 from helpers.helpers import get_feature_indices, load_config
+from model.helpers_models import get_adj_norm_fn
 
 OUTPUT_DIR = "simulation_rollout"
 BOUNDARY_NODE = 3
@@ -289,7 +290,7 @@ def apply_render_mode(pos_true, pos_pred, stress_true, stress_pred, node_type_tr
 # MULTI-STEP ROLLOUT (USING VELOCITY PREDICTIONS)
 
 def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_idxs, stress_idxs, node_type_idxs,
-            world_pos_idxs, add_world_edges, radius):
+            world_pos_idxs, add_world_edges, radius, adj_norm_fn):
     """
     Autoregressive rollout that:
       - predicts plate velocities + stresses,
@@ -349,7 +350,8 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
     stress_pred_list = []
     node_type_pred_list = []
     rollout_error_list = []
-    base_A = A.clone() 
+    base_A_raw = A.clone()
+    base_A_norm = adj_norm_fn(base_A_raw)
     dynamic_edges_list = []  # Store edges for viz
     for k in range(steps):
         # Generate world edges for the current predicted state
@@ -357,10 +359,11 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
         # The paper says world edges are based on spatial proximity in world space.
         # radius=0.03 from paper for deforming plate
         if add_world_edges:
-            A_dynamic, dyn_edges = add_w_edges_radius(base_A, node_type, p_hat, radius=radius)
+            A_dynamic, dyn_edges = add_w_edges_radius(base_A_raw, node_type, p_hat, radius=radius)
+            A_model = adj_norm_fn(A_dynamic)
         else:
-            A_dynamic = base_A
             dyn_edges = None
+            A_model = base_A_norm
 
         # print(f"dyn_edges={dyn_edges.shape}")
         dynamic_edges_list.append(dyn_edges)
@@ -369,7 +372,7 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
         #    v_hat_k, sigma_hat_k from graph at time "k"
         # ======================================================
         with torch.no_grad():
-            pred = model.rollout_step(A_dynamic, current_norm)  # [N,4] normalized
+            pred = model.rollout_step(A_model, current_norm)  # [N,4] normalized
 
         vel_norm = pred[:, :3]  # [N,3]
         stress_norm = pred[:, 3].unsqueeze(-1)  # [N,1]
@@ -518,6 +521,7 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
 
     # dim_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
+    adj_norm_fn = get_adj_norm_fn(model_cfg['adj_norm'])
     model = GraphUNet_DefPlate(dim_in, 3, 1, myargs, adj_norm=model_cfg['adj_norm']).to(device)
     state = torch.load(checkpoint_path, map_location=device)
 
@@ -555,7 +559,8 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
         node_type_idxs=node_type_idxs,
         world_pos_idxs=world_pos_idxs,
         add_world_edges=add_world_edges,
-        radius=dataconfig.get('radius_world_edge', 0.03)
+        radius=dataconfig.get('radius_world_edge', 0.03),
+        adj_norm_fn=adj_norm_fn
     )
 
     pos_pred = coords_pred_list[0]
@@ -624,7 +629,8 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
         node_type_idxs=node_type_idxs,
         world_pos_idxs=world_pos_idxs,
         add_world_edges=add_world_edges,
-        radius=dataconfig.get('radius_world_edge', 0.03)
+        radius=dataconfig.get('radius_world_edge'),
+        adj_norm_fn=adj_norm_fn
     )
 
     # ---- visualize each step ----

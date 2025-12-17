@@ -36,7 +36,12 @@ class GCN(nn.Module):
             resulting new prediction/embedded matrix
         """
         h = self.drop(h)
-        h = torch.matmul(g, h)  # convolution step
+        # Use torch.sparse.mm if g is a sparse tensor
+        if g.is_sparse:
+            print(f"[GCN forward] g is sparse, shape: {g.shape}")
+            h = torch.sparse.mm(g, h)
+        else:
+            h = torch.matmul(g, h)  # convolution step
         h = self.proj(h)  # learnable
         h = self.act(h)
         return h

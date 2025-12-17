@@ -95,22 +95,56 @@ def collate_unet(batch):
 def collate_block_diagonal(batch):
     """
     Collate samples into a single disjoint-union graph:
-      - block-diagonal adjacency
+      - block-diagonal adjacency (Sparse COO)
       - concatenated feature and node-type tensors
     This is optimized for vectorized training on large GPUs.
     """
-    adj_list = []
     x_t_list = []
     x_tp1_list = []
     node_types_list = []
 
+    all_indices = []
+    all_values = []
+    cumulative_nodes = 0
+
     for A, X_t, X_tp1, _, _, _, node_type, _, _ in batch:
-        adj_list.append(A)
+        # A is likely dense [N, N] here from process_single_trajectory
+        # Convert to sparse COO indices/values
+        if A.is_sparse:
+            print(f"[collate_block_diagonal] A is sparse, shape: {A.shape}")
+             A_coo = A.coo()
+             indices = A_coo.indices()
+             values = A_coo.values()
+        else:
+            print(f"[collate_block_diagonal] A is not sparse, shape: {A.shape}")
+             indices = torch.nonzero(A).t()
+             values = A[indices[0], indices[1]]
+
+        # Shift indices
+        shifted_indices = indices + cumulative_nodes
+        all_indices.append(shifted_indices)
+        all_values.append(values)
+
         x_t_list.append(X_t)
         x_tp1_list.append(X_tp1)
         node_types_list.append(node_type)
+        
+        cumulative_nodes += X_t.shape[0]
 
-    batch_adj = torch.block_diag(*adj_list)
+    # Create sparse block-diagonal adjacency
+    if len(all_indices) > 0:
+        batch_indices = torch.cat(all_indices, dim=1)
+        batch_values = torch.cat(all_values)
+    else:
+        batch_indices = torch.empty((2, 0), dtype=torch.long)
+        batch_values = torch.empty(0)
+
+    batch_adj = torch.sparse_coo_tensor(
+        batch_indices, 
+        batch_values, 
+        (cumulative_nodes, cumulative_nodes)
+    ).coalesce()
+
     batch_x_t = torch.cat(x_t_list, dim=0)
     batch_x_tp1 = torch.cat(x_tp1_list, dim=0)
     batch_node_types = torch.cat(node_types_list, dim=0)

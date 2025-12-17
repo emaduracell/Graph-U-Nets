@@ -142,8 +142,14 @@ def compute_loss_vectorized(preds, targets, nodetypes, velocity_idxs, stress_idx
     pred_vel = preds[:, :3]
     pred_stress = preds[:, 3:4]
 
-    vel_loss = torch.tensor(0.0, device=preds.device)
-    stress_loss = torch.tensor(0.0, device=preds.device)
+<<<<<<< Current (Your changes)
+    vel_loss = preds.new_zeros(())
+    stress_loss = preds.new_zeros(())
+=======
+    # Initialize losses as 0.0 (float) to avoid unnecessary tensor allocation
+    vel_loss = 0.0
+    stress_loss = 0.0
+>>>>>>> Incoming (Background Agent changes)
 
     if vel_mask.any():
         vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
@@ -151,7 +157,19 @@ def compute_loss_vectorized(preds, targets, nodetypes, velocity_idxs, stress_idx
     if stress_mask.any():
         stress_loss = F.huber_loss(pred_stress[stress_mask], target_stress[stress_mask])
 
-    return vel_loss + stress_loss, vel_loss, stress_loss
+    total_loss = vel_loss + stress_loss
+    
+    # TODO sure about this?
+    # Ensure all return values are tensors for consistency (backward compatibility)
+    # If they are still floats (no loss computed), convert them to 0-tensors on the correct device
+    if isinstance(vel_loss, float):
+        vel_loss = torch.tensor(vel_loss, device=preds.device)
+    if isinstance(stress_loss, float):
+        stress_loss = torch.tensor(stress_loss, device=preds.device)
+    if isinstance(total_loss, float):
+        total_loss = torch.tensor(total_loss, device=preds.device)
+
+    return total_loss, vel_loss, stress_loss
 
 
 def _get_grad_norm(model):
@@ -212,10 +230,10 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
         batch_adj, batch_xt, batch_xtp1, batch_nt = batch
 
         if not move_all_to_device and batch_adj.device != device:
-            batch_adj = batch_adj.to(device)
-            batch_xt = batch_xt.to(device)
-            batch_xtp1 = batch_xtp1.to(device)
-            batch_nt = batch_nt.to(device)
+            batch_adj = batch_adj.to(device, non_blocking=True)
+            batch_xt = batch_xt.to(device, non_blocking=True)
+            batch_xtp1 = batch_xtp1.to(device, non_blocking=True)
+            batch_nt = batch_nt.to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
 

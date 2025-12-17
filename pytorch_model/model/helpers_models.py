@@ -32,6 +32,11 @@ def top_k_graph(scores, g, h, k, adj_norm_fn):
     values_score = torch.unsqueeze(values_score, -1)
     new_h = torch.mul(new_h, values_score)
     un_g = g.bool().float()
+    
+    if un_g.is_sparse:
+        print(f"[top_k_graph] un_g is sparse, shape: {un_g.shape}")
+        un_g = un_g.to_dense()
+        
     un_g = torch.matmul(un_g, un_g).bool().float()
     un_g = un_g[idx, :]
     un_g = un_g[:, idx]
@@ -51,6 +56,21 @@ def norm_g(g):
     :return: g
         new row-normalized adjacency matrix
     """
+    if g.is_sparse:
+        print(f"[norm_g] g is sparse, shape: {g.shape}")
+        # Sparse row normalization
+        g = g.coalesce()
+        degrees = torch.sparse.sum(g, dim=1).to_dense() # [N]
+        degrees = degrees.clamp(min=1e-12)
+        
+        # In sparse COO, we divide values by degree of row index
+        indices = g.indices() # [2, E]
+        row_indices = indices[0]
+        values = g.values()
+        
+        new_values = values / degrees[row_indices]
+        return torch.sparse_coo_tensor(indices, new_values, g.shape).coalesce()
+        
     degrees = torch.sum(g, dim=1, keepdim=True)
     degrees = degrees.clamp(min=1e-12)
     g = g / degrees
@@ -61,6 +81,24 @@ def norm_adj_sym(A: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     Symmetric normalization: D^{-1/2} A D^{-1/2}
     A: [N, N] or [B, N, N]
     """
+    if A.is_sparse:
+        print(f"[norm_adj_sym] A is sparse, shape: {A.shape}")
+        A = A.coalesce()
+        if A.dim() != 2:
+            raise ValueError(f"Sparse A must be 2D, got shape {tuple(A.shape)}")
+            
+        deg = torch.sparse.sum(A, dim=1).to_dense()
+        inv_sqrt_deg = (deg.clamp_min(eps)).pow(-0.5)
+        
+        indices = A.indices()
+        row_indices = indices[0]
+        col_indices = indices[1]
+        values = A.values()
+        
+        # D^-1/2 * A * D^-1/2 -> A_ij / (sqrt(deg_i) * sqrt(deg_j))
+        new_values = values * inv_sqrt_deg[row_indices] * inv_sqrt_deg[col_indices]
+        return torch.sparse_coo_tensor(indices, new_values, A.shape).coalesce()
+
     deg = A.sum(dim=-1)                              # [N] or [B, N]
     inv_sqrt_deg = (deg.clamp_min(eps)).pow(-0.5)    # avoid inf for deg=0
 
