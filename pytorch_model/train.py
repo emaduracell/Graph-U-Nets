@@ -131,7 +131,7 @@ def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list, vel
         total_stress_loss += stress_loss
         total_loss += vel_loss + stress_loss
 
-    return (total_loss / num_graphs, total_vel_loss / num_graphs, total_stress_loss / num_graphs)
+    return total_loss / num_graphs, total_vel_loss / num_graphs, total_stress_loss / num_graphs
 
 
 def _compute_single_graph_loss(pred, target, nodetype, velocity_idxs,
@@ -419,9 +419,9 @@ def train_gunet(device, num_workers, pin_memory):
     return model, test_loader, history, feat_idx, plots_dir
 
 if __name__ == "__main__":
-    cuda = False
-    num_workers = 0
-    pin_memory = False
+    cuda = True
+    num_workers = 4
+    pin_memory = True
     device = get_device(cuda)
     # TODO: set to false if you have compatibility problems
     torch.backends.cuda.matmul.allow_tf32 = True
