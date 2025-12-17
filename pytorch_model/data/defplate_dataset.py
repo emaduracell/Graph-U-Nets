@@ -1,3 +1,4 @@
+import torch
 from torch.utils.data import Dataset
 BOUNDARY_NODE = 3
 NORMAL_NODE = 0
@@ -89,3 +90,29 @@ def collate_unet(batch):
     return (adjacency_mat_list, X_t_list, X_tp1_list, mean_list, std_list, cells_list,
         node_types_list, traj_id_list, time_idx_list)
     # base_A, X_t_input, X_tp1_target, traj["mean"], traj["std"], traj["cells"], node_types, traj_id, t
+
+
+def collate_block_diagonal(batch):
+    """
+    Collate samples into a single disjoint-union graph:
+      - block-diagonal adjacency
+      - concatenated feature and node-type tensors
+    This is optimized for vectorized training on large GPUs.
+    """
+    adj_list = []
+    x_t_list = []
+    x_tp1_list = []
+    node_types_list = []
+
+    for A, X_t, X_tp1, _, _, _, node_type, _, _ in batch:
+        adj_list.append(A)
+        x_t_list.append(X_t)
+        x_tp1_list.append(X_tp1)
+        node_types_list.append(node_type)
+
+    batch_adj = torch.block_diag(*adj_list)
+    batch_x_t = torch.cat(x_t_list, dim=0)
+    batch_x_tp1 = torch.cat(x_tp1_list, dim=0)
+    batch_node_types = torch.cat(node_types_list, dim=0)
+
+    return batch_adj, batch_x_t, batch_x_tp1, batch_node_types

@@ -108,33 +108,11 @@ class GraphUNet_DefPlate(nn.Module):
 
     def forward(self, batch_adj_A, batch_feat_X, feat_tp1_mat_list, node_types):
         """
-        Forward over a batch of graphs.
-
-        Args:
-            batch_adj_A: list[Tensor]
-                List of adjacency matrices, each of shape [N, N].
-            batch_feat_X: list[Tensor]
-                List of input node features at time t, each [N, F_in].
-            feat_tp1_mat_list: Tensor or None
-                If provided: tensor of shape [B, N, F_in] with X_{t+1}.
-                We only compute loss on velocity (features 4-6) and stress (feature 7).
-                Loss is filtered by node_type:
-                  - Velocity: only node_type == 0
-                  - Stress: node_type == 0 or node_type == 6
-                If None: the method returns only predictions.
-
-        :returns
-            If targets is not None:
-                loss : scalar tensor (MSE)
-                preds: Tensor [B, N, 4] (3 velocity + 1 stress)
-            If targets is None:
-                preds: Tensor [B, N, 4]
+        Forward pass supporting both:
+          - block-diagonal tensors (training): returns Tensor [Total_N, 4]
+          - list-of-graphs (eval/plots): returns List[Tensor]
         """
-        # Prediction
-        preds_list = self.embed(batch_adj_A, batch_feat_X)
-        assert node_types is not None, "node_types must be provided when computing loss."
-        assert len(batch_adj_A) == len(batch_feat_X) == len(feat_tp1_mat_list) == len(node_types)
-        return preds_list
+        return self.embed(batch_adj_A, batch_feat_X)
 
     def rollout_step(self, A, X_t):
         """

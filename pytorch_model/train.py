@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
 import os
 import numpy as np
-from data.defplate_dataset import DefPlateDataset, collate_unet
+from data.defplate_dataset import DefPlateDataset, collate_unet, collate_block_diagonal
 from model.gunet_deforming_plate import GraphUNet_DefPlate
 from torch.optim.lr_scheduler import ExponentialLR
 import time
@@ -42,37 +42,49 @@ class TrainingHistory:
 
 def _create_standard_dataloaders(dataset, batch_size, shuffle, num_workers, pin_memory):
     """
-    Create train/test dataloaders with 80/20 split.
-
-    Args:
-        dataset: DefPlateDataset
-        batch_size: int
-        shuffle: bool
-        num_workers: int
-        pin_memory: bool
-
-    :return: Tuple[DataLoader, DataLoader]
+    Create train/val loaders with block-diagonal batching plus a list-of-graphs
+    eval loader for plotting.
     """
     total = len(dataset)
     perm = torch.randperm(total)
     split = int(0.8 * total)
 
     train_idx = perm[:split]
-    test_idx = perm[split:]
+    val_idx = perm[split:]
 
     train_set = Subset(dataset, train_idx)
-    test_set = Subset(dataset, test_idx)
+    val_set = Subset(dataset, val_idx)
 
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_unet,
-                              num_workers=num_workers, pin_memory=pin_memory)
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, collate_fn=collate_unet,
-                             num_workers=num_workers, pin_memory=pin_memory)
+    train_loader = DataLoader(
+        train_set,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        collate_fn=collate_block_diagonal,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
+    val_loader = DataLoader(
+        val_set,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_block_diagonal,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
+    eval_loader = DataLoader(
+        val_set,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_unet,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
 
-    return train_loader, test_loader
+    return train_loader, val_loader, eval_loader
 
 def _create_overfit_dataloader(dataset, overfit_traj_id, overfit_time_idx_list):
     """
-    Create a dataloader for overfitting on specific samples.
+    Create dataloaders for overfitting on specific samples.
 
     Args:
         dataset: DefPlateDataset
@@ -98,66 +110,40 @@ def _create_overfit_dataloader(dataset, overfit_traj_id, overfit_time_idx_list):
         )
 
     overfit_set = Subset(dataset, overfit_indices)
-    loader = DataLoader(overfit_set, batch_size=len(overfit_indices), shuffle=False, collate_fn=collate_unet)
+    # Block-diagonal loader for training/validation
+    train_val_loader = DataLoader(
+        overfit_set, batch_size=len(overfit_indices), shuffle=False, collate_fn=collate_block_diagonal
+    )
+    # List-of-graphs loader for evaluation/plots
+    eval_loader = DataLoader(
+        overfit_set, batch_size=len(overfit_indices), shuffle=False, collate_fn=collate_unet
+    )
 
     print(f"\nOverfitting on trajectory {overfit_traj_id} with {len(overfit_indices)} time steps")
-    print_overfit_samples(loader)
+    print_overfit_samples(eval_loader)
 
-    return loader
+    return train_val_loader, eval_loader
 
 
-def compute_loss(adj_A_list, feat_tp1_mat_list, node_types_list, preds_list, velocity_idxs, stress_idxs):
+def compute_loss_vectorized(preds, targets, nodetypes, velocity_idxs, stress_idxs):
     """
-    Compute loss per batch.
+    Vectorized Huber loss over a disjoint-union batch.
 
     Args:
-        adj_A_list: list
-        feat_tp1_mat_list: list
-        node_types_list: list
-        preds_list: list
-        velocity_idxs: slice
-        stress_idxs: slice
-    :return: (total_loss / num_graphs, total_vel_loss / num_graphs, total_stress_loss / num_graphs)
-        every element of the tuple is a torch.Tensor
+        preds: Tensor [B*N, F_out]
+        targets: Tensor [B*N, F_in]
+        nodetypes: Tensor [B*N]
     """
-    total_loss = 0.0
-    total_vel_loss = 0.0
-    total_stress_loss = 0.0
-    num_graphs = len(adj_A_list)
+    vel_mask = (nodetypes == NORMAL_NODE)
+    stress_mask = (nodetypes == NORMAL_NODE) | (nodetypes == BOUNDARY_NODE)
 
-    for pred, target, nodetype in zip(preds_list, feat_tp1_mat_list, node_types_list):
-        vel_loss, stress_loss = _compute_single_graph_loss(pred, target, nodetype, velocity_idxs, stress_idxs)
-        total_vel_loss += vel_loss
-        total_stress_loss += stress_loss
-        total_loss += vel_loss + stress_loss
+    target_vel = targets[:, velocity_idxs]
+    target_stress = targets[:, stress_idxs]
+    pred_vel = preds[:, :3]
+    pred_stress = preds[:, 3:4]
 
-    return (total_loss / num_graphs, total_vel_loss / num_graphs, total_stress_loss / num_graphs)
-
-
-def _compute_single_graph_loss(pred, target, nodetype, velocity_idxs,
-    stress_idxs):
-    """
-    Compute loss for a single graph.
-
-    Args:
-        pred: torch.Tensor
-        target: torch.Tensor
-        nodetype: torch.Tensor
-        velocity_idxs: slice
-        stress_idxs: slice
-
-    :return: (vel_loss, stress_loss)
-    """
-    vel_mask = (nodetype == NORMAL_NODE)
-    stress_mask = (nodetype == NORMAL_NODE) | (nodetype == BOUNDARY_NODE)
-
-    target_vel = target[:, velocity_idxs]
-    target_stress = target[:, stress_idxs]
-    pred_vel = pred[:, :3]
-    pred_stress = pred[:, 3:4]
-
-    vel_loss = 0.0
-    stress_loss = 0.0
+    vel_loss = torch.tensor(0.0, device=preds.device)
+    stress_loss = torch.tensor(0.0, device=preds.device)
 
     if vel_mask.any():
         vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
@@ -165,7 +151,7 @@ def _compute_single_graph_loss(pred, target, nodetype, velocity_idxs,
     if stress_mask.any():
         stress_loss = F.huber_loss(pred_stress[stress_mask], target_stress[stress_mask])
 
-    return vel_loss, stress_loss
+    return vel_loss + stress_loss, vel_loss, stress_loss
 
 
 def _get_grad_norm(model):
@@ -179,67 +165,42 @@ def _get_grad_norm(model):
 
 
 @torch.no_grad()
-def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs, amp_enabled: bool):
-    """
-    Run one validation epoch.
-
-    Args:
-        model: torch.nn.Module
-        test_loader: DataLoader
-        device: torch.device
-        velocity_idxs: slice
-        stress_idxs: slice
-
-    :return: (avg_loss, avg_vel_loss, avg_stress_loss)
-    """
+def _validate_one_epoch(model, val_loader, device, velocity_idxs, stress_idxs, amp_enabled: bool):
+    """Run one validation epoch with block-diagonal batches."""
     model.eval()
     total_loss = 0.0
     total_vel_loss = 0.0
     total_stress_loss = 0.0
 
-    for batch in tqdm(test_loader, desc="Val", leave=False):
-        adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, _, _, _, node_types, _, time_indices = batch
+    for batch in tqdm(val_loader, desc="Val", leave=False):
+        batch_adj, batch_xt, batch_xtp1, batch_nt = batch
 
-        # Adjacency is already sliced to [N, N] in the dataset/collate
-        adj_mat_list = [A.to(device, non_blocking=True) for A in adj_mat_list]
-        feat_t_mat_list = [X.to(device, non_blocking=True) for X in feat_t_mat_list]
-        feat_tp1_mat_list = [X.to(device, non_blocking=True) for X in feat_tp1_mat_list]
-        node_types = [nt.to(device, non_blocking=True) for nt in node_types]
+        batch_adj = batch_adj.to(device, non_blocking=True)
+        batch_xt = batch_xt.to(device, non_blocking=True)
+        batch_xtp1 = batch_xtp1.to(device, non_blocking=True)
+        batch_nt = batch_nt.to(device, non_blocking=True)
 
         if device.type == 'cuda':
             with autocast(device_type=device.type, enabled=amp_enabled):
-                preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+                preds = model(batch_adj, batch_xt, batch_xtp1, batch_nt)
         else:
-            preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
-        batch_loss, vel_loss, stress_loss = compute_loss(adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
-            velocity_idxs, stress_idxs)
+            preds = model(batch_adj, batch_xt, batch_xtp1, batch_nt)
 
-        # Call item only at the end for computational reasons
+        batch_loss, vel_loss, stress_loss = compute_loss_vectorized(
+            preds, batch_xtp1, batch_nt, velocity_idxs, stress_idxs
+        )
+
         total_loss += batch_loss.detach()
         total_vel_loss += vel_loss.detach()
         total_stress_loss += stress_loss.detach()
 
-    n = len(test_loader)
+    n = len(val_loader)
     return total_loss.item() / n, total_vel_loss.item() / n, total_stress_loss.item() / n
 
 
 def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stress_idxs, amp_enabled, scaler,
                      move_all_to_device):
-    """
-    Run one training epoch. Returns (avg_loss, avg_vel_loss, avg_stress_loss, avg_grad_norm).
-    Args:
-        model: torch.nn.Module
-        train_loader: DataLoader
-        optimizer: torch.optim.Optimizer
-        device: torch.device
-        velocity_idxs: slice
-        stress_idxs: slice
-        amp_enabled: bool
-        scaler: GradScaler | None
-
-    :return: (total_loss, total_vel_loss, total_stress_loss, total_grad_norm)
-        floats of averaged loss for that epoch
-    """
+    """Run one training epoch using block-diagonal batches."""
     model.train()
     total_loss = 0.0
     total_vel_loss = 0.0
@@ -248,30 +209,26 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
     num_batches = 0
 
     for batch in tqdm(train_loader, desc="Train", leave=False):
-        adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, _, _, _, node_types, _, time_indices = batch
+        batch_adj, batch_xt, batch_xtp1, batch_nt = batch
 
-        # Adjacency is already sliced to [N, N] in the dataset/collate
-        if not move_all_to_device and adj_mat_list[0].device != device:
-            # Move to device
-            adj_mat_list = [A.to(device) for A in adj_mat_list]
-            feat_t_mat_list = [X.to(device) for X in feat_t_mat_list]
-            feat_tp1_mat_list = [X.to(device) for X in feat_tp1_mat_list]
-            node_types = [nt.to(device) for nt in node_types]
+        if not move_all_to_device and batch_adj.device != device:
+            batch_adj = batch_adj.to(device)
+            batch_xt = batch_xt.to(device)
+            batch_xtp1 = batch_xtp1.to(device)
+            batch_nt = batch_nt.to(device)
 
         optimizer.zero_grad(set_to_none=True)
 
         if device.type == 'cuda':
             with autocast(device_type=device.type, enabled=amp_enabled):
-                preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
-                batch_loss, vel_loss, stress_loss = compute_loss(
-                    adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
-                    velocity_idxs, stress_idxs
+                preds = model(batch_adj, batch_xt, batch_xtp1, batch_nt)
+                batch_loss, vel_loss, stress_loss = compute_loss_vectorized(
+                    preds, batch_xtp1, batch_nt, velocity_idxs, stress_idxs
                 )
         else:
-            preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
-            batch_loss, vel_loss, stress_loss = compute_loss(
-                adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
-                velocity_idxs, stress_idxs
+            preds = model(batch_adj, batch_xt, batch_xtp1, batch_nt)
+            batch_loss, vel_loss, stress_loss = compute_loss_vectorized(
+                preds, batch_xtp1, batch_nt, velocity_idxs, stress_idxs
             )
 
         if amp_enabled and scaler is not None:
@@ -354,12 +311,14 @@ def train_gunet(device, num_workers, pin_memory):
 
     # Create dataloaders based on mode
     if train_cfg['mode'] == "overfit":
-        loader = _create_overfit_dataloader(dataset, train_cfg.get('overfit_traj_id'),
-                                            train_cfg.get('overfit_time_idx', []))
-        train_loader, test_loader = loader, loader
+        train_loader, eval_loader = _create_overfit_dataloader(
+            dataset, train_cfg.get('overfit_traj_id'), train_cfg.get('overfit_time_idx', [])
+        )
+        val_loader = train_loader
     else:
-        train_loader, test_loader = _create_standard_dataloaders(dataset, train_cfg['batch_size'], train_cfg['shuffle'],
-                                                                 num_workers, pin_memory)
+        train_loader, val_loader, eval_loader = _create_standard_dataloaders(
+            dataset, train_cfg['batch_size'], train_cfg['shuffle'], num_workers, pin_memory
+        )
 
     # Build model and optimizer
     model_hyperparams = create_model_hyperparams(model_cfg)
@@ -388,7 +347,7 @@ def train_gunet(device, num_workers, pin_memory):
                                                                           amp_enabled, scaler, move_all_to_device)
 
         # Validate
-        val_loss, val_vel, val_stress = _validate_one_epoch(model, test_loader, device, feat_idx.velocity,
+        val_loss, val_vel, val_stress = _validate_one_epoch(model, val_loader, device, feat_idx.velocity,
                                                             feat_idx.stress, amp_enabled)
 
         # Record history
@@ -416,7 +375,7 @@ def train_gunet(device, num_workers, pin_memory):
     os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
     torch.save(model.state_dict(), checkpoint_path)
 
-    return model, test_loader, history, feat_idx, plots_dir
+    return model, eval_loader, history, feat_idx, plots_dir
 
 if __name__ == "__main__":
     cuda = False
@@ -431,6 +390,6 @@ if __name__ == "__main__":
         torch.set_float32_matmul_precision("high")
     except Exception:
         pass
-    model, test_loader, history, feat_idx, plots_dir = train_gunet(device, num_workers, pin_memory)
-    run_final_evaluation(model, test_loader, device, history, feat_idx.velocity, feat_idx.stress, plots_dir,
+    model, eval_loader, history, feat_idx, plots_dir = train_gunet(device, num_workers, pin_memory)
+    run_final_evaluation(model, eval_loader, device, history, feat_idx.velocity, feat_idx.stress, plots_dir,
                          config_path=os.path.join(os.path.dirname(__file__), "config.yaml"))
