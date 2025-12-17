@@ -205,7 +205,10 @@ def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs, 
         feat_tp1_mat_list = [X.to(device, non_blocking=True) for X in feat_tp1_mat_list]
         node_types = [nt.to(device, non_blocking=True) for nt in node_types]
 
-        with autocast(enabled=amp_enabled):
+        if device.type == 'cuda':
+            with autocast(device_type=device.type, enabled=amp_enabled):
+                preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+        else:
             preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
         batch_loss, vel_loss, stress_loss = compute_loss(adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
             velocity_idxs, stress_idxs)
@@ -256,7 +259,14 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
 
         optimizer.zero_grad(set_to_none=True)
 
-        with autocast(enabled=amp_enabled):
+        if device.type == 'cuda':
+            with autocast(device_type=device.type, enabled=amp_enabled):
+                preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+                batch_loss, vel_loss, stress_loss = compute_loss(
+                    adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
+                    velocity_idxs, stress_idxs
+                )
+        else:
             preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
             batch_loss, vel_loss, stress_loss = compute_loss(
                 adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
@@ -284,7 +294,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
     avg_grad_norm = total_grad_norm / n
     return total_loss.item() / n, total_vel_loss.item() / n, total_stress_loss.item() / n, avg_grad_norm
 
-def train_gunet(device, num_workers, pin_memory, cuda):
+def train_gunet(device, num_workers, pin_memory):
     """Training loop"""
     # Load configuration from YAML
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
@@ -362,7 +372,7 @@ def train_gunet(device, num_workers, pin_memory, cuda):
         fused=(device.type == "cuda")
     )
     scheduler = ExponentialLR(optimizer, gamma=train_cfg['gamma_lr_scheduler'])
-    amp_enabled = train_cfg.get('amp')
+    amp_enabled = bool(train_cfg.get('amp'))
     scaler = GradScaler(enabled=amp_enabled)
 
     # Training

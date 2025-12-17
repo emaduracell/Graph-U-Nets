@@ -16,7 +16,7 @@ training:
   batch_size: 4
   shuffle: False # False for overfitting
   adam_weight_decay: 0 # default: 1e-4 | overfit = 0
-  num_train_trajs: 100
+  num_train_trajs: 10
   mode: "overfit" # None or "overfit"
   gamma_lr_scheduler: 0.999 # lr_final = lr0 * gamma^epochs 0.9995 good value 0.9997
   random_seed: 42 # Seed for train/test split and any random operations
