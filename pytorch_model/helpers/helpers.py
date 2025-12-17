@@ -93,13 +93,33 @@ def print_training_config(train_cfg, train_loader):
     print(f"Number of trajectories: {train_cfg['num_train_trajs']}")
     print(f"Train loader batches: {len(train_loader)}\n")
 
-def get_device():
+def get_device(cuda: bool):
     """Determine the best available device."""
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    elif torch.cuda.is_available():
-        return torch.device("cuda")
-    return torch.device("cpu")
+    if cuda:
+        if torch.cuda.is_available():
+            dev = torch.device("cuda")
+            try:
+                name = torch.cuda.get_device_name(dev)
+                print(f"[get_device] Using CUDA device: {name}")
+            except Exception:
+                print(f"[get_device] Using CUDA device: {dev}")
+        else:
+            raise ValueError("CUDA is not available")
+    else:
+        if torch.backends.mps.is_available():
+            dev = torch.device("mps")
+            print(f"[get_device] Using device: {dev}")
+        elif torch.cuda.is_available():
+            dev = torch.device("cuda")
+            try:
+                name = torch.cuda.get_device_name(dev)
+                print(f"[get_device] Using CUDA device: {name}")
+            except Exception:
+                print(f"[get_device] Using CUDA device: {dev}")
+        else:
+            dev = torch.device("cpu")
+            print(f"[get_device] Using device: {dev}")
+    return dev
 
 def get_feature_indices(include_mesh_pos):
     """Get feature indices based on whether mesh positions are included."""

@@ -8,6 +8,7 @@ model:
   dropout_gnn: 0 # default = 0.1, overfit = 0
   dropout_mlps_final: 0 # default = 0.1, overfit = 0
   adj_norm: "row" # 'sym' | 'row'
+  amp: false # enable automatic mixed precision training
 
 # Training parameters
 training:

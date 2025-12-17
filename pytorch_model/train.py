@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from helpers.evaluation_helper import run_final_evaluation
 from helpers.helpers import (format_training_time, create_model_hyperparams, load_config, load_trajectories_preprocessed,
                              print_training_config, setup_paths, get_feature_indices, get_device, print_overfit_samples)
+from torch.cuda.amp import autocast, GradScaler
 
 # Constants
 BOUNDARY_NODE = 3
@@ -175,7 +176,7 @@ def _get_grad_norm(model):
 
 
 @torch.no_grad()
-def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs):
+def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs, amp_enabled: bool):
     """
     Run one validation epoch.
 
@@ -210,7 +211,8 @@ def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs):
         feat_tp1_mat_list = [X.to(device) for X in feat_tp1_mat_list]
         node_types = [nt.to(device) for nt in node_types]
 
-        preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+        with autocast(enabled=amp_enabled):
+            preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
         batch_loss, vel_loss, stress_loss = compute_loss(adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
             velocity_idxs, stress_idxs)
 
@@ -222,7 +224,7 @@ def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs):
     return total_loss / n, total_vel_loss / n, total_stress_loss / n
 
 
-def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stress_idxs):
+def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stress_idxs, amp_enabled: bool, scaler: GradScaler | None):
     """
     Run one training epoch. Returns (avg_loss, avg_vel_loss, avg_stress_loss, avg_grad_norm).
     Args:
@@ -263,15 +265,22 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
 
         optimizer.zero_grad()
 
-        preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
-        batch_loss, vel_loss, stress_loss = compute_loss(
-            adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
-            velocity_idxs, stress_idxs
-        )
+        with autocast(enabled=amp_enabled):
+            preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+            batch_loss, vel_loss, stress_loss = compute_loss(
+                adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
+                velocity_idxs, stress_idxs
+            )
 
-        batch_loss.backward()
+        if amp_enabled and scaler is not None:
+            scaler.scale(batch_loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            batch_loss.backward()
+            optimizer.step()
+
         total_grad_norm += _get_grad_norm(model)
-        optimizer.step()
 
         total_loss += batch_loss.item()
         total_vel_loss += vel_loss.item()
@@ -332,6 +341,8 @@ def train_gunet(device, num_workers, pin_memory):
 
     optimizer = optim.Adam(model.parameters(), lr=train_cfg['lr'], weight_decay=train_cfg['adam_weight_decay'])
     scheduler = ExponentialLR(optimizer, gamma=train_cfg['gamma_lr_scheduler'])
+    amp_enabled = train_cfg.get('amp')
+    scaler = GradScaler(enabled=amp_enabled)
 
     # Training
     print_training_config(train_cfg, train_loader)
@@ -341,11 +352,12 @@ def train_gunet(device, num_workers, pin_memory):
     for epoch in range(train_cfg['epochs']):
         # Train
         train_loss, train_vel, train_stress, grad_norm = _train_one_epoch(model, train_loader, optimizer, device,
-                                                                          feat_idx.velocity, feat_idx.stress)
+                                                                          feat_idx.velocity, feat_idx.stress,
+                                                                          amp_enabled, scaler)
 
         # Validate
         val_loss, val_vel, val_stress = _validate_one_epoch(model, test_loader, device, feat_idx.velocity,
-                                                            feat_idx.stress)
+                                                            feat_idx.stress, amp_enabled)
 
         # Record history
         history.train_losses.append(train_loss)
@@ -375,9 +387,10 @@ def train_gunet(device, num_workers, pin_memory):
     return model, test_loader, history, feat_idx, plots_dir
 
 if __name__ == "__main__":
+    cuda = True
     num_workers = 0
     pin_memory = False
-    device = get_device()
+    device = get_device(cuda)
     model, test_loader, history, feat_idx, plots_dir = train_gunet(device, num_workers, pin_memory)
     run_final_evaluation(model, test_loader, device, history, feat_idx.velocity, feat_idx.stress, plots_dir,
                          config_path=os.path.join(os.path.dirname(__file__), "config.yaml"))
