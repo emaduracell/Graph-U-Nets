@@ -1,6 +1,7 @@
 data:
   include_mesh_pos: True
   normalization_method: "standard" # 'standard' or 'row'
+  adj_norm: "row" # 'sym' | 'row' (applied to adjacency in preprocessing)
   max_trajs: 10
   tfrecord_path: "raw_data/train.tfrecord"
   meta_path: "raw_data/meta.json"
