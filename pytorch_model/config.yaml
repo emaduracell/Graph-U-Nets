@@ -2,9 +2,9 @@
 model:
   activation_gnn: "ELU"
   activation_mlps_final: "ELU"
-  hid_gnn_layer_dim: 512 # 128
-  hid_mlp_dim: 512 # 256
-  k_pool_ratios: [0.9, 0.8, 0.7] # [0.9, 0.8, 0.7] [0.95, 0.95, 0.95, 0.95, 0.95, 0.95, 0.8, 0.7]
+  hid_gnn_layer_dim: 128 # 128
+  hid_mlp_dim: 256 # 256
+  k_pool_ratios: [0.95, 0.95, 0.95] # [0.9, 0.8, 0.7] [0.95, 0.95, 0.95, 0.95, 0.95, 0.95, 0.8, 0.7]
   dropout_gnn: 0 # default = 0.1, overfit = 0
   dropout_mlps_final: 0 # default = 0.1, overfit = 0
   adj_norm: "row" # 'sym' | 'row'
@@ -12,7 +12,7 @@ model:
 # Training parameters
 training:
   lr: 0.001 # default = 1e-4 good value 0.001
-  epochs: 1000
+  epochs: 500
   batch_size: 4
   shuffle: False # False for overfitting
   adam_weight_decay: 0 # default: 1e-4 | overfit = 0

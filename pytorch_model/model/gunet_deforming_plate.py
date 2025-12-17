@@ -69,17 +69,8 @@ class GraphUNet_DefPlate(nn.Module):
         # Initial GCN
         self.start_gcn = GCN(in_dim, hid_gnn_layer_dim, self.act_gnn, dropout_gnn, adj_norm)
         # Graph U-Net
-        # self.g_unet = GraphUnet(
-        #     ks=k_pool_ratios,
-        #     in_dim=hid_gnn_layer_dim,  # in_dim  (from s_gcn)
-        #     out_dim=hid_gnn_layer_dim,  # out_dim (unused in this impl, kept for API)
-        #     dim=hid_gnn_layer_dim,
-        #     act=self.act_gnn,
-        #     drop_p=dropout_gnn,
-        #     adj_norm=adj_norm
-        # )
-        self.g_unet = GraphUnetNoPool(
-            num_layers=len(k_pool_ratios),
+        self.g_unet = GraphUnet(
+            ks=k_pool_ratios,
             in_dim=hid_gnn_layer_dim,  # in_dim  (from s_gcn)
             out_dim=hid_gnn_layer_dim,  # out_dim (unused in this impl, kept for API)
             dim=hid_gnn_layer_dim,
@@ -87,6 +78,15 @@ class GraphUNet_DefPlate(nn.Module):
             drop_p=dropout_gnn,
             adj_norm=adj_norm
         )
+        # self.g_unet = GraphUnetNoPool(
+        #     num_layers=len(k_pool_ratios),
+        #     in_dim=hid_gnn_layer_dim,  # in_dim  (from s_gcn)
+        #     out_dim=hid_gnn_layer_dim,  # out_dim (unused in this impl, kept for API)
+        #     dim=hid_gnn_layer_dim,
+        #     act=self.act_gnn,
+        #     drop_p=dropout_gnn,
+        #     adj_norm=adj_norm
+        # )
         # Velocity MLP Head: [N, l_dim] -> [N, 3]
         self.velocity_mlp = nn.Sequential(
             nn.Dropout(p=dropout_mlps_final),

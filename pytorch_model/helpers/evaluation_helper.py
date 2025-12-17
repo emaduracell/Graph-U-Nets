@@ -112,15 +112,13 @@ def run_final_evaluation(model, test_loader, device, history, velocity_idxs, str
         targets = [X.to(device) for X in feat_tp1_mat_list]
         node_types_gpu = [nt.to(device) for nt in node_types]
 
-        preds_list = model(gs, hs, targets, node_types_gpu)
+        preds_list = model(gs, hs)
 
         if i == 0:
             handle.remove()
 
-        _collect_evaluation_data(
-            preds_list, targets, node_types_gpu, means, stds,
-            velocity_idxs, stress_idxs, device, denorm_data, norm_data
-        )
+        _collect_evaluation_data(preds_list, targets, node_types_gpu, means, stds,
+                                 velocity_idxs, stress_idxs, device, denorm_data, norm_data)
 
     # Prepare data for plotting
     final_preds, final_targets = _prepare_plot_data(denorm_data)

@@ -208,9 +208,9 @@ def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs, 
 
         if device.type == 'cuda':
             with autocast(device_type=device.type, enabled=amp_enabled):
-                preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+                preds_list = model(adj_mat_list, feat_t_mat_list)
         else:
-            preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+            preds_list = model(adj_mat_list, feat_t_mat_list)
         batch_loss, vel_loss, stress_loss = compute_loss(adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
             velocity_idxs, stress_idxs)
 
@@ -268,7 +268,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
                     velocity_idxs, stress_idxs
                 )
         else:
-            preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+            preds_list = model(adj_mat_list, feat_t_mat_list)
             batch_loss, vel_loss, stress_loss = compute_loss(
                 adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
                 velocity_idxs, stress_idxs
