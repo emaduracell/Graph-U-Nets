@@ -184,8 +184,10 @@ class GraphUNet_DefPlate(nn.Module):
         :returns y_pred: [N, F_out]
             predicted node features at t+1
         """
-        # # Normalize adjacency
-        # TODO: Could try to see if I can disable this
+        # Normalize adjacency: without this loss explodes immediately
+        # Might need this if numerical problems
+        # with torch.autocast(device_type="cuda", enabled=False):
+        #     g_norm = self.adj_norm_fn(g.float())
         g = self.adj_norm_fn(g)  # [N, N]
         # Initial GCN
         h0 = self.start_gcn(g, h)  # [N, l_dim]

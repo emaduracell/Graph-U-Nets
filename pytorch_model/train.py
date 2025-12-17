@@ -14,9 +14,8 @@ from helpers.evaluation_helper import run_final_evaluation
 from helpers.helpers import (format_training_time, create_model_hyperparams, load_config, load_trajectories_preprocessed,
                              print_training_config, setup_paths, get_feature_indices, get_device, print_overfit_samples,
                              move_any_to_device)
-from torch.cuda.amp import autocast, GradScaler
-# torch.backends.cuda.matmul.allow_tf32 = False
-# torch.backends.cudnn.allow_tf32 = False
+# from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 
 # Constants
 BOUNDARY_NODE = 3
@@ -201,22 +200,23 @@ def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs, 
         adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, _, _, _, node_types, _, time_indices = batch
 
         # Adjacency is already sliced to [N, N] in the dataset/collate
-        adj_mat_list = [A.to(device) for A in adj_mat_list]
-        feat_t_mat_list = [X.to(device) for X in feat_t_mat_list]
-        feat_tp1_mat_list = [X.to(device) for X in feat_tp1_mat_list]
-        node_types = [nt.to(device) for nt in node_types]
+        adj_mat_list = [A.to(device, non_blocking=True) for A in adj_mat_list]
+        feat_t_mat_list = [X.to(device, non_blocking=True) for X in feat_t_mat_list]
+        feat_tp1_mat_list = [X.to(device, non_blocking=True) for X in feat_tp1_mat_list]
+        node_types = [nt.to(device, non_blocking=True) for nt in node_types]
 
         with autocast(enabled=amp_enabled):
             preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
         batch_loss, vel_loss, stress_loss = compute_loss(adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
             velocity_idxs, stress_idxs)
 
-        total_loss += batch_loss.item()
-        total_vel_loss += vel_loss.item()
-        total_stress_loss += stress_loss.item()
+        # Call item only at the end for computational reasons
+        total_loss += batch_loss.detach()
+        total_vel_loss += vel_loss.detach()
+        total_stress_loss += stress_loss.detach()
 
     n = len(test_loader)
-    return total_loss / n, total_vel_loss / n, total_stress_loss / n
+    return total_loss.item() / n, total_vel_loss.item() / n, total_stress_loss.item() / n
 
 
 def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stress_idxs, amp_enabled, scaler,
@@ -254,7 +254,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
             feat_tp1_mat_list = [X.to(device) for X in feat_tp1_mat_list]
             node_types = [nt.to(device) for nt in node_types]
 
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
         with autocast(enabled=amp_enabled):
             preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
@@ -271,7 +271,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
             batch_loss.backward()
             optimizer.step()
 
-        if not cuda:
+        if device.type != "cuda":
             total_grad_norm += _get_grad_norm(model)
 
         # For speed reasons, do not call .item() already here
@@ -284,7 +284,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
     avg_grad_norm = total_grad_norm / n
     return total_loss.item() / n, total_vel_loss.item() / n, total_stress_loss.item() / n, avg_grad_norm
 
-def train_gunet(device, num_workers, pin_memory):
+def train_gunet(device, num_workers, pin_memory, cuda):
     """Training loop"""
     # Load configuration from YAML
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
@@ -359,7 +359,7 @@ def train_gunet(device, num_workers, pin_memory):
         model.parameters(),
         lr=train_cfg['lr'],
         weight_decay=train_cfg['adam_weight_decay'],
-        fused=True
+        fused=(device.type == "cuda")
     )
     scheduler = ExponentialLR(optimizer, gamma=train_cfg['gamma_lr_scheduler'])
     amp_enabled = train_cfg.get('amp')
@@ -374,7 +374,7 @@ def train_gunet(device, num_workers, pin_memory):
         # Train
         train_loss, train_vel, train_stress, grad_norm = _train_one_epoch(model, train_loader, optimizer, device,
                                                                           feat_idx.velocity, feat_idx.stress,
-                                                                          amp_enabled, scaler)
+                                                                          amp_enabled, scaler, move_all_to_device)
 
         # Validate
         val_loss, val_vel, val_stress = _validate_one_epoch(model, test_loader, device, feat_idx.velocity,
@@ -412,6 +412,14 @@ if __name__ == "__main__":
     num_workers = 0
     pin_memory = False
     device = get_device(cuda)
+    # TODO: set to false if you have compatibility problems
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    # PyTorch 2.x:
+    try:
+        torch.set_float32_matmul_precision("high")
+    except Exception:
+        pass
     model, test_loader, history, feat_idx, plots_dir = train_gunet(device, num_workers, pin_memory)
     run_final_evaluation(model, test_loader, device, history, feat_idx.velocity, feat_idx.stress, plots_dir,
                          config_path=os.path.join(os.path.dirname(__file__), "config.yaml"))
