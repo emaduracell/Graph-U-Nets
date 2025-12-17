@@ -42,11 +42,11 @@ def build_velocity(world_pos, mode):
 
 
 class TrajectoryDataset(InMemoryDataset):
-    def __init__(self, root, dataconfig, transform, pre_transform):
+    def __init__(self, root, dataconfig, transform=None, pre_transform=None, pre_filter=None):
         self.dataconfig = dataconfig
         # PyG will check root/processed/processed_file_names
         # If found, it skips process(). If not, it runs process().
-        super().__init__(root, transform, pre_transform)
+        super().__init__(root, transform, pre_transform, pre_filter)
         self.data, self.slices = torch.load(self.processed_paths[0])
 
     @property
@@ -119,7 +119,7 @@ class TrajectoryDataset(InMemoryDataset):
                 feats_t = np.concatenate(components, axis=-1)
                 feats_list.append(feats_t)
 
-            # [FIX 1] Stack to (T, N, F) then permute to (N, T, F)
+            # Stack to (T, N, F) then permute to (N, T, F)
             X_seq = torch.tensor(np.stack(feats_list, axis=0), dtype=torch.float32)
             X_seq = X_seq.permute(1, 0, 2)  # Shape becomes (N, T, F)
 
@@ -136,7 +136,7 @@ class TrajectoryDataset(InMemoryDataset):
             full_edge_index = torch.cat([edge_index_mesh, edge_index_world], dim=1)
             full_edge_index = coalesce(full_edge_index)
 
-            # [FIX 2] Permute pos_seq as well
+            # Permute pos_seq as well
             pos_seq_tensor = torch.tensor(world_pos, dtype=torch.float32)
             pos_seq_tensor = pos_seq_tensor.permute(1, 0, 2)  # Shape becomes (N, T, D)
 
@@ -145,10 +145,19 @@ class TrajectoryDataset(InMemoryDataset):
                         edge_index=full_edge_index,
                         node_type=torch.tensor(node_type_idx, dtype=torch.long),
                         cells=torch.tensor(mesh_cells, dtype=torch.long))
+
+            # [FIX] Apply Pre-Filter
+            if self.pre_filter is not None and not self.pre_filter(data):
+                continue
+
+            # [FIX] Apply Pre-Transform
+            if self.pre_transform is not None:
+                data = self.pre_transform(data)
+
             data_list.append(data)
 
         if not data_list:
-            print("No data loaded. Check paths.")
+            print("No data loaded. Check paths or pre_filter logic.")
             return
 
         # Compute Statistics
@@ -210,13 +219,22 @@ if __name__ == "__main__":
     print("=================================================")
 
     # CLEANUP: Delete old processed file to force a rebuild
-    # This ensures that running this script actually re-processes the data
     if os.path.exists(processed_dir):
         print(f"Cleaning old data in {processed_dir}...")
         shutil.rmtree(processed_dir)
 
+
+    pre_filter = None
+    pre_transform = None
+
     # Instantiate Dataset
     # This triggers init -> check files -> process() because files were deleted
-    dataset = TrajectoryDataset(root=dataset_root, dataconfig=config, pre_transform=None, transform=None)
+    dataset = TrajectoryDataset(
+        root=dataset_root,
+        dataconfig=config,
+        pre_transform=pre_transform,
+        pre_filter=pre_filter
+    )
+
     path_print = os.path.join(processed_dir, 'pyg_processed_data.pt')
     print(f"Done! Data available at: {path_print}")

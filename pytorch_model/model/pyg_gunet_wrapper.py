@@ -57,30 +57,32 @@ class GraphUNet_DefPlate(nn.Module):
     def forward(self, x_seq, edge_index, batch_idx):
         """
         Args:
-            x_seq: Input features. Can be (Batch, T, N, F) or (T, Total_Nodes, F).
-            edge_index: (2, E) Connectivity (Mesh + Precomputed World Edges).
-            batch_idx: (Total_Nodes) Batch vector.
-
-        Returns:
-            out_seq: (T, Total_Nodes, 4) -> [Vel(3), Stress(1)]
+            x_seq: (Total_Nodes, T, F) coming from PyG Batch.
+            edge_index: (2, E)
+            batch_idx: (Total_Nodes)
         """
 
         # 1. Handle Input Shapes
-        # We want x_seq to be (T, Total_Nodes, F) to loop over time
-        if x_seq.dim() == 4:  # Case (Batch, T, N, F)
+        # Case A: 4D Input (Batch, T, N, F) - rare in PyG unless manual collation
+        if x_seq.dim() == 4:
             B, T, N, F = x_seq.shape
-            # Permute to (T, B, N, F) then flatten B*N -> (T, Total_Nodes, F)
+            # Permute to (T, B*N, F)
             x_seq = x_seq.permute(1, 0, 2, 3).reshape(T, -1, F)
 
+        # Case B: Standard PyG 3D Input (Total_Nodes, T, F)
+        elif x_seq.dim() == 3:
+            # We need (T, Total_Nodes, F)
+            x_seq = x_seq.permute(1, 0, 2)
+
+        # x_seq is now (T, Total_Nodes, F)
         T = x_seq.shape[0]
         outs = []
 
         # 2. Temporal Loop
         for t in range(T):
-            x_t = x_seq[t]  # (Total_Nodes, F)
+            x_t = x_seq[t]  # (Total_Nodes, F) -> Correct shape for GraphUNet
 
             # Backbone: Get Latent Embeddings
-            # GraphUNet needs batch_idx for pooling
             latent = self.unet(x_t, edge_index, batch_idx)  # (Total_Nodes, Hidden)
 
             # Heads
@@ -92,4 +94,7 @@ class GraphUNet_DefPlate(nn.Module):
             outs.append(pred_t)
 
         # Stack back to (T, Total_Nodes, 4)
-        return torch.stack(outs, dim=0)
+        out = torch.stack(outs, dim=0)
+
+        # Return to (Total_Nodes, T, 4) to match target shape in loss function
+        return out.permute(1, 0, 2)

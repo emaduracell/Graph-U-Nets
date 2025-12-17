@@ -12,7 +12,7 @@ from torch.amp import autocast, GradScaler
 
 # Helpers and Data
 from helpers.helpers import (format_training_time, load_config, print_training_config,
-                             setup_paths, get_feature_indices, get_device, print_overfit_samples)
+                             setup_paths, get_feature_indices, get_device_pyg, print_overfit_samples)
 from data_builder_pyg import TrajectoryDataset
 from model.pyg_gunet_wrapper import GraphUNet_DefPlate
 
@@ -131,16 +131,17 @@ def _get_grad_norm(model):
 
 def _slice_time_sequence(x_seq, pos_seq, time_indices: Optional[List[int]]):
     """
-    Slices the (Batch, T, N, F) tensors based on time indices.
+    Slices the (Batch*N, T, F) tensors based on time indices.
     Returns Input (t) and Target (t+1).
     """
-    # Determine Time Dimension
-    t_dim = 1 if x_seq.dim() == 4 else 0
+    # PyG batches are (Total_Nodes, T, F). Time is dimension 1.
+    # If using 4D batches (Batch, T, N, F), Time is dimension 1.
+    # We can safely assume dim 1 is time based on your data builder.
+    t_dim = 1
     max_t = x_seq.shape[t_dim]
 
     if time_indices is not None:
         # Overfit mode: pick specific t for input, t+1 for target
-        # Ensure indices + 1 are valid
         valid_indices = [t for t in time_indices if t + 1 < max_t]
         if not valid_indices:
             raise ValueError("No valid time indices for training (t+1 exceeds bounds).")
@@ -148,25 +149,21 @@ def _slice_time_sequence(x_seq, pos_seq, time_indices: Optional[List[int]]):
         idx_t = torch.tensor(valid_indices, device=x_seq.device)
         idx_tp1 = torch.tensor([t + 1 for t in valid_indices], device=x_seq.device)
 
-        if t_dim == 1:
-            x_input = x_seq.index_select(1, idx_t)
-            x_target = x_seq.index_select(1, idx_tp1)
-            pos_input = pos_seq.index_select(1, idx_t)
-        else:
-            x_input = x_seq.index_select(0, idx_t)
-            x_target = x_seq.index_select(0, idx_tp1)
-            pos_input = pos_seq.index_select(0, idx_t)
+        x_input = x_seq.index_select(t_dim, idx_t)
+        x_target = x_seq.index_select(t_dim, idx_tp1)
+        # pos_seq might be None or used differently, ensuring safety:
+        pos_input = pos_seq.index_select(t_dim, idx_t) if pos_seq is not None else None
 
     else:
         # Standard mode: Input 0..T-1, Target 1..T
-        if t_dim == 1:
-            x_input = x_seq[:, :-1]
-            x_target = x_seq[:, 1:]
-            pos_input = pos_seq[:, :-1]
-        else:
-            x_input = x_seq[:-1]
-            x_target = x_seq[1:]
-            pos_input = pos_seq[:-1]
+        # Python slicing [:, :-1] works for dim 1
+        x_input = x_seq.transpose(0, 1)[:-1].transpose(0, 1)  # Safer dim agnostic slice
+        x_target = x_seq.transpose(0, 1)[1:].transpose(0, 1)
+
+        # Or simply, since we know it is dim 1:
+        x_input = x_seq[:, :-1]
+        x_target = x_seq[:, 1:]
+        pos_input = pos_seq[:, :-1] if pos_seq is not None else None
 
     return x_input, x_target, pos_input
 
@@ -262,8 +259,7 @@ def train_pyg(device, num_workers):
     checkpoint_path, plots_dir = setup_paths(train_cfg)
 
     # 1. Load the Data Config to find the 'dataset_root'
-    # Assuming datapath in train config points to the folder containing pyg_dataconfig.yaml
-    dataconfig_path = "pyg_dataconfig.yaml"  # Or path relative to train script
+    dataconfig_path = "pyg_dataconfig.yaml"
     if not os.path.exists(dataconfig_path):
         raise FileNotFoundError(f"Could not find data config at {dataconfig_path}")
     dataconfig = load_config(dataconfig_path)
@@ -288,7 +284,13 @@ def train_pyg(device, num_workers):
     if not os.path.exists(os.path.join(dataset_root, 'processed', 'pyg_processed_data.pt')):
         raise RuntimeError(f"Processed data not found in {dataset_root}. Please run data_builder_pyg.py first.")
 
-    dataset = TrajectoryDataset(root=dataset_root, dataconfig=dataconfig, pre_transform=None, transform=None)
+    # UPDATED: Passing transforms to the dataset
+    dataset = TrajectoryDataset(
+        root=dataset_root,
+        dataconfig=dataconfig,
+        pre_transform=None,  # Already processed
+        transform=None  # Applied on-the-fly
+    )
     print(f"Dataset loaded successfully. Num trajectories: {len(dataset)}")
 
     if move_all_to_device:
@@ -354,6 +356,5 @@ def train_pyg(device, num_workers):
 
 
 if __name__ == "__main__":
-    device = get_device(cuda=False)
-    # If using move_all_to_device, num_workers will be forced to 0 automatically
-    train_pyg(device, num_workers=4)
+    device = get_device_pyg(cuda=False)
+    train_pyg(device, num_workers=0)
