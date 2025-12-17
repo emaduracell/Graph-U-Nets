@@ -197,15 +197,7 @@ def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs, 
     for batch in test_loader:
         adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, _, _, _, node_types, _, time_indices = batch
 
-        # Handle dynamic adjacency (A might be [T, N, N])
-        processed_adj_list = []
-        for A, t_idx in zip(adj_mat_list, time_indices):
-            if A.ndim == 3:
-                processed_adj_list.append(A[t_idx])
-            else:
-                processed_adj_list.append(A)
-        adj_mat_list = processed_adj_list
-
+        # Adjacency is already sliced to [N, N] in the dataset/collate
         adj_mat_list = [A.to(device) for A in adj_mat_list]
         feat_t_mat_list = [X.to(device) for X in feat_t_mat_list]
         feat_tp1_mat_list = [X.to(device) for X in feat_tp1_mat_list]
@@ -248,15 +240,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
     for batch in train_loader:
         adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, _, _, _, node_types, _, time_indices = batch
 
-        # Handle dynamic adjacency (A might be [T, N, N])
-        processed_adj_list = []
-        for A, t_idx in zip(adj_mat_list, time_indices):
-            if A.ndim == 3:
-                processed_adj_list.append(A[t_idx])
-            else:
-                processed_adj_list.append(A)
-        adj_mat_list = processed_adj_list
-
+        # Adjacency is already sliced to [N, N] in the dataset/collate
         # Move to device
         adj_mat_list = [A.to(device) for A in adj_mat_list]
         feat_t_mat_list = [X.to(device) for X in feat_t_mat_list]
