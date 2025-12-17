@@ -1,0 +1,16 @@
+# Paths
+tfrecord_path:
+meta_path:
+output_dir: ""
+# Loading
+max_trajs: 100 # or e.g. 100
+include_mesh_pos: true # if traj["mesh_pos"] exists
+# Normalization
+normalization_method: standard  # triggers pos/vel std sharing + mean centering
+# World edges
+add_world_edges: radius # "radius" | "k_neighb" | "none"
+radius_world_edge: 0.03 # used only for radius mode
+k_neighb: 1 # used only for knn mode
+# Optional (currently not used by this pipeline)
+a_time_var: false
+

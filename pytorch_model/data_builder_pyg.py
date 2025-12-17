@@ -6,8 +6,6 @@ from tfrecord.reader import tfrecord_loader
 from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.nn import radius_graph, knn_graph
 from torch_geometric.utils import to_undirected, coalesce
-
-# Import your existing helpers
 from helpers.helpers import get_feature_indices, load_config
 from data.decode_tfrecord_utils import cast_trajectory_from_record
 
@@ -24,10 +22,6 @@ def build_mesh_edge_index(mesh_cells):
     """
     Vectorized conversion of mesh cells (quads) to COO edge_index.
     """
-    # mesh_cells shape: (Num_Cells, 4)
-    # Edges in a quad: (0,1), (1,2), (2,3), (3,0) + diagonals if needed (0,2), (1,3)
-    # The original code had: (0,1), (0,2), (0,3), (1,2), (1,3), (2,3) -> Fully connected quad
-
     cells = torch.tensor(mesh_cells, dtype=torch.long)
 
     # Define the 6 edges for a fully connected quad
@@ -46,14 +40,13 @@ def build_mesh_edge_index(mesh_cells):
 
     edge_index = torch.stack([s, t], dim=0)
 
-    # Make undirected (i->j and j->i) and remove duplicates
+    # Make undirected and remove duplicates
     edge_index = to_undirected(edge_index)
 
     return edge_index
 
 
 def build_velocity(world_pos, mode):
-    # (Existing logic preserved, just ensuring torch tensors)
     if mode not in ["normal", "actuator"]:
         raise ValueError(f"Unknown mode = {mode}")
 
@@ -69,6 +62,7 @@ def build_velocity(world_pos, mode):
 
 
 class TrajectoryDataset(InMemoryDataset):
+
     def __init__(self, root, dataconfig, transform=None, pre_transform=None):
         self.dataconfig = dataconfig
         super().__init__(root, transform, pre_transform)
@@ -105,7 +99,7 @@ class TrajectoryDataset(InMemoryDataset):
 
         data_list = []
 
-        # --- PASS 1: CREATE DATA OBJECTS ---
+        # Create data objects
         for i, record in enumerate(loader):
             if max_trajs is not None and i >= max_trajs:
                 break
@@ -130,13 +124,11 @@ class TrajectoryDataset(InMemoryDataset):
             vel_normal[:, actuator_mask, :] = vel_actuator[:, actuator_mask, :]
 
             # 3. Node Types One-Hot
-            # Construct lookup table
             lookup = np.array([NORMAL_NODE_OH, SPHERE_NODE_OH, [0, 0], BOUNDARY_NODE_OH])
             node_type_idx = node_type.squeeze(-1)
             node_type_oh = lookup[node_type_idx].astype(np.float32)
 
-            # 4. Build Feature Sequence X (T, N, F)
-            # Layout: [mesh_pos?, pos, node_type, vel, stress]
+            # 4. Build Feature Sequence X (T, N, F) [mesh_pos?, pos, node_type, vel, stress]
             feats_list = []
             for t in range(T):
                 components = []
@@ -156,26 +148,14 @@ class TrajectoryDataset(InMemoryDataset):
             edge_index_mesh = build_mesh_edge_index(mesh_cells)
 
             # 6. Add Initial/Static World Edges
-            # Note: If a_time_var is True, strictly speaking, edges change every step.
-            # PyG Data objects usually store one edge_index.
-            # We will calculate the world edges based on t=0 here.
-            # Dynamic updates should happen in the model using `data.pos`.
-
             pos_t0 = torch.tensor(world_pos[0], dtype=torch.float32)
 
             edge_index_world = torch.empty((2, 0), dtype=torch.long)
 
             if add_world_edges == 'radius':
-                # PyG Native Radius Graph (exclude self loops automatically usually)
-                # We need to filter out sphere-sphere interactions if required,
-                # but standard radius graph is usually sufficient for geometric deep learning.
-                # If strict exclusion is needed, masks apply.
-
-                # Simple native implementation:
                 edge_index_world = radius_graph(pos_t0, r=radius, loop=False)
 
             elif add_world_edges == 'k_neighb':
-                # PyG Native KNN
                 edge_index_world = knn_graph(pos_t0, k=k_neighb, loop=False)
 
             # Combine Mesh and World edges
@@ -183,10 +163,7 @@ class TrajectoryDataset(InMemoryDataset):
             full_edge_index = coalesce(full_edge_index)  # Remove duplicates and sort
 
             # 7. Create Data Object
-            # We store the sequence of X in 'x'.
-            # We store the sequence of positions in 'pos' (useful for dynamic graph update).
-            data = Data(
-                x=X_seq,  # (T, N, F)
+            data = Data(x=X_seq,
                 pos_seq=torch.tensor(world_pos, dtype=torch.float32),  # (T, N, 3)
                 edge_index=full_edge_index,  # (2, E_static)
                 node_type=torch.tensor(node_type_idx, dtype=torch.long),
@@ -198,7 +175,7 @@ class TrajectoryDataset(InMemoryDataset):
             print("No data loaded.")
             return
 
-        # --- PASS 2: NORMALIZATION ---
+        # Pass 2
         # Compute global mean and std
         print("Computing statistics...")
 

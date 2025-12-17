@@ -4,6 +4,7 @@ from torch_geometric.nn import GraphUNet
 
 
 class GraphUNet_DefPlate(nn.Module):
+
     def __init__(self, in_channels, hidden_channels, depth, pool_ratios,
                  model_config_hyperparams):
         """

@@ -262,7 +262,7 @@ def train_pyg(device, num_workers):
     checkpoint_path, plots_dir = setup_paths(train_cfg)
 
     # Load Dataconfig
-    dataconfig_path = os.path.join(train_cfg['datapath'], 'used_dataconfig.yaml')
+    dataconfig_path = os.path.join(train_cfg['datapath'], 'pyg_used_dataconfig.yaml')
     dataconfig = load_config(dataconfig_path)
     include_mesh_pos = dataconfig['include_mesh_pos']
     feat_idx = get_feature_indices(include_mesh_pos)
