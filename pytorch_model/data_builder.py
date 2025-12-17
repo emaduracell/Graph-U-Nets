@@ -349,7 +349,7 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
         radius=add_world_edges_dict["radius_world_edge"],  # Adjust radius
         k_neighb=add_world_edges_dict["k_neighb"]  # Adjust k neighbors
     )
-    time_start = time.time()
+    # time_start = time.time()
     
     if a_time_var:
         # Time-varying adjacency: compute per time step
@@ -371,14 +371,14 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
         A_out = A_static  # [N, N]
         world_edges_out = dynamic_edges_static  # single tensor for compatibility
 
-    compute_duration = time.time() - time_start
-    # print(f\"[process_single_trajectory] Added world edges in {compute_duration:.4f}s\")
+    # compute_duration = time.time() - time_start
+    # print(f"[process_single_trajectory] Added world edges in {compute_duration:.4f}s")
     
     # ensure cells and node_type are tensors, passing them to plot border and sphere separately (not predicted)
     cells_tensor = torch.tensor(mesh_cells, dtype=torch.long)
     node_type_tensor = torch.tensor(node_type_raw.squeeze(-1), dtype=torch.long)
-    dict_traj = {\"A\": A_out, \"X_seq_norm\": X_feat, \"mean\": 0, \"std\": 0, \"cells\": cells_tensor,
-                 \"node_type\": node_type_tensor, \"world_edge_index\": world_edges_out}
+    dict_traj = {"A": A_out, "X_seq_norm": X_feat, "mean": 0, "std": 0, "cells": cells_tensor,
+                 "node_type": node_type_tensor, "world_edge_index": world_edges_out}
 
     return dict_traj, X_feat
 
@@ -415,6 +415,9 @@ def load_all_trajectories(dataconfig):
                             'k_neighb':dataconfig['k_neighb']}
     a_time_var = dataconfig.get('a_time_var')
 
+    print(dataconfig['add_world_edges'])
+    if dataconfig['add_world_edges'] not in ['radius', 'k_neighb', 'None']:
+        raise ValueError(f"add_world_edges == {dataconfig['add_world_edges']} not supported")
     if norm_method not in ['centroid', 'standard', 'row']:
         raise ValueError(f"norm_method == {norm_method} not supported")
 

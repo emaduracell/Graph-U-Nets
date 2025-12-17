@@ -12,8 +12,11 @@ from typing import List, Tuple
 from dataclasses import dataclass
 from helpers.evaluation_helper import run_final_evaluation
 from helpers.helpers import (format_training_time, create_model_hyperparams, load_config, load_trajectories_preprocessed,
-                             print_training_config, setup_paths, get_feature_indices, get_device, print_overfit_samples)
+                             print_training_config, setup_paths, get_feature_indices, get_device, print_overfit_samples,
+                             move_any_to_device)
 from torch.cuda.amp import autocast, GradScaler
+# torch.backends.cuda.matmul.allow_tf32 = False
+# torch.backends.cudnn.allow_tf32 = False
 
 # Constants
 BOUNDARY_NODE = 3
@@ -224,7 +227,8 @@ def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs, 
     return total_loss / n, total_vel_loss / n, total_stress_loss / n
 
 
-def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stress_idxs, amp_enabled: bool, scaler: GradScaler | None):
+def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stress_idxs, amp_enabled, scaler,
+                     move_all_to_device):
     """
     Run one training epoch. Returns (avg_loss, avg_vel_loss, avg_stress_loss, avg_grad_norm).
     Args:
@@ -234,6 +238,8 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
         device: torch.device
         velocity_idxs: slice
         stress_idxs: slice
+        amp_enabled: bool
+        scaler: GradScaler | None
 
     :return: (total_loss, total_vel_loss, total_stress_loss, total_grad_norm)
         floats of averaged loss for that epoch
@@ -257,11 +263,12 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
                 processed_adj_list.append(A)
         adj_mat_list = processed_adj_list
 
-        # Move to device
-        adj_mat_list = [A.to(device) for A in adj_mat_list]
-        feat_t_mat_list = [X.to(device) for X in feat_t_mat_list]
-        feat_tp1_mat_list = [X.to(device) for X in feat_tp1_mat_list]
-        node_types = [nt.to(device) for nt in node_types]
+        if not move_all_to_device and adj_mat_list[0].device != device:
+            # Move to device
+            adj_mat_list = [A.to(device) for A in adj_mat_list]
+            feat_t_mat_list = [X.to(device) for X in feat_t_mat_list]
+            feat_tp1_mat_list = [X.to(device) for X in feat_tp1_mat_list]
+            node_types = [nt.to(device) for nt in node_types]
 
         optimizer.zero_grad()
 
@@ -280,15 +287,18 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
             batch_loss.backward()
             optimizer.step()
 
-        total_grad_norm += _get_grad_norm(model)
+        if not cuda:
+            total_grad_norm += _get_grad_norm(model)
 
-        total_loss += batch_loss.item()
-        total_vel_loss += vel_loss.item()
-        total_stress_loss += stress_loss.item()
+        # For speed reasons, do not call .item() already here
+        total_loss += batch_loss.detach()
+        total_vel_loss += vel_loss.detach()
+        total_stress_loss += stress_loss.detach()
         num_batches += 1
 
     n = max(num_batches, 1)
-    return total_loss / n, total_vel_loss / n, total_stress_loss / n, total_grad_norm / n
+    avg_grad_norm = total_grad_norm / n
+    return total_loss.item() / n, total_vel_loss.item() / n, total_stress_loss.item() / n, avg_grad_norm
 
 def train_gunet(device, num_workers, pin_memory):
     """Training loop"""
@@ -306,6 +316,7 @@ def train_gunet(device, num_workers, pin_memory):
     feat_idx = get_feature_indices(include_mesh_pos)
     torch.manual_seed(train_cfg['random_seed'])
     np.random.seed(train_cfg['random_seed'])
+    move_all_to_device = bool(train_cfg.get("move_all_to_device"))
 
     print("\n=================================================")
     print(" LOADING PREPROCESSED DATA")
@@ -319,7 +330,28 @@ def train_gunet(device, num_workers, pin_memory):
             f"Please run 'python preprocess_data.py' first to generate the preprocessed data."
         )
 
-    list_of_trajs = load_trajectories_preprocessed(train_cfg['datapath'] + "/preprocessed_train.pt", train_cfg['num_train_trajs'])
+    list_of_trajs = load_trajectories_preprocessed(
+        train_cfg['datapath'] + "/preprocessed_train.pt", train_cfg['num_train_trajs']
+    )
+    if move_all_to_device:
+        if device.type == "cuda":
+            free, total = torch.cuda.mem_get_info()
+            print(f"[train] CUDA free/total before dataset move: {free / 1024 ** 3:.2f} / {total / 1024 ** 3:.2f} GB")
+
+        print(f"[train] Moving all trajectories to {device} ...")
+        list_of_trajs = move_any_to_device(list_of_trajs, device, non_blocking=False)
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+            free, total = torch.cuda.mem_get_info()
+            print(f"[train] CUDA free/total after dataset move:  {free / 1024 ** 3:.2f} / {total / 1024 ** 3:.2f} GB")
+
+    if move_all_to_device:
+        # IMPORTANT: GPU-resident dataset + multi-worker dataloader is a footgun.
+        if num_workers != 0:
+            print("[train] move_all_to_device=True -> forcing num_workers=0")
+        num_workers = 0
+        pin_memory = False  # irrelevant / sometimes harmful here
 
     # Build dataset from these trajectories
     dataset = DefPlateDataset(list_of_trajs, world_pos_idxs=feat_idx.world_pos, velocity_idxs=feat_idx.velocity)
@@ -339,7 +371,12 @@ def train_gunet(device, num_workers, pin_memory):
     model = (GraphUNet_DefPlate(feat_idx.dim_in, DIM_OUT_VEL, DIM_OUT_STRESS, model_hyperparams, model_cfg['adj_norm'])
              .to(device))
 
-    optimizer = optim.Adam(model.parameters(), lr=train_cfg['lr'], weight_decay=train_cfg['adam_weight_decay'])
+    optimizer = optim.Adam(
+        model.parameters(),
+        lr=train_cfg['lr'],
+        weight_decay=train_cfg['adam_weight_decay'],
+        fused=True
+    )
     scheduler = ExponentialLR(optimizer, gamma=train_cfg['gamma_lr_scheduler'])
     amp_enabled = train_cfg.get('amp')
     scaler = GradScaler(enabled=amp_enabled)
@@ -387,7 +424,7 @@ def train_gunet(device, num_workers, pin_memory):
     return model, test_loader, history, feat_idx, plots_dir
 
 if __name__ == "__main__":
-    cuda = True
+    cuda = False
     num_workers = 0
     pin_memory = False
     device = get_device(cuda)

@@ -8,7 +8,6 @@ model:
   dropout_gnn: 0 # default = 0.1, overfit = 0
   dropout_mlps_final: 0 # default = 0.1, overfit = 0
   adj_norm: "row" # 'sym' | 'row'
-  amp: false # enable automatic mixed precision training
 
 # Training parameters
 training:
@@ -17,12 +16,14 @@ training:
   batch_size: 4
   shuffle: False # False for overfitting
   adam_weight_decay: 0 # default: 1e-4 | overfit = 0
-  num_train_trajs: 1
-  mode: "overfit" # None or "overfit"
+  num_train_trajs: 100
+  mode: "None" # None or "overfit"
   gamma_lr_scheduler: 0.999 # lr_final = lr0 * gamma^epochs 0.9995 good value 0.9997
   random_seed: 42 # Seed for train/test split and any random operations
   overfit_traj_id: 0 # For overfit mode: which trajectory to use (null = use first available)
   overfit_time_idx: [0,1,2,3,4,5,6,7] # For overfit mode: which time step t to use (null = use all time steps from trajectory)
   # [13, 202, 302, 10, 11, 90, 321, 43]
-  datapath: "processed_data/data_None_False_row" # data_world=None_mesh=False_norm=standard_Ainv=True
+  datapath: "processed_data/data_world=radius_mesh=True_norm=standard_At=False" # data_world=None_mesh=False_norm=standard_Ainv=True
   model_path_out: "model_out/"
+  amp: False # enable automatic mixed precision training
+  move_all_to_device: True

@@ -185,6 +185,7 @@ class GraphUNet_DefPlate(nn.Module):
             predicted node features at t+1
         """
         # # Normalize adjacency
+        # TODO: Could try to see if I can disable this
         g = self.adj_norm_fn(g)  # [N, N]
         # Initial GCN
         h0 = self.start_gcn(g, h)  # [N, l_dim]

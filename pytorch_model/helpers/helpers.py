@@ -142,11 +142,13 @@ def load_trajectories_preprocessed(data_path, num_train_trajs):
         )
 
     list_of_trajs = torch.load(data_path)
-    print(f"\t Loaded {len(list_of_trajs)} preprocessed trajectories")
+    gb = tensor_bytes(list_of_trajs) / 1024 ** 3
+    print(f"[load_trajectories_preprocessed] Tensor payload size: {gb:.2f} GB")
+    print(f"\t [load_trajectories_preprocessed] Loaded {len(list_of_trajs)} preprocessed trajectories")
 
     if num_train_trajs is not None and num_train_trajs < len(list_of_trajs):
         list_of_trajs = list_of_trajs[:num_train_trajs]
-        print(f"\t Using first {num_train_trajs} trajectories")
+        print(f"\t [load_trajectories_preprocessed] Using first {num_train_trajs} trajectories")
 
     return list_of_trajs
 
@@ -193,3 +195,34 @@ def print_debug_nodetype(idx, node_type):
             f"[data_loader] node_type: \n \t type(node_type) = {type(node_type)} \n \t type(node_type[0])={type(node_type[0])}, "
             f"\n \t type(node_type[0][0])={type(node_type[0][0])}) \n \t len(node_type)={len(node_type)} "
             f"\n \t len(node_type[0])={len(node_type[0])}")
+
+def tensor_bytes(x):
+    if torch.is_tensor(x):
+        return x.nelement() * x.element_size()
+    if isinstance(x, dict):
+        return sum(tensor_bytes(v) for v in x.values())
+    if isinstance(x, (list, tuple)):
+        return sum(tensor_bytes(v) for v in x)
+    return 0
+
+def move_any_to_device(obj, device, non_blocking):
+    """
+    Recursively move tensors inside nested (dict/list/tuple) structures to device.
+
+    Args:
+        obj:
+        device: torch.device
+        non_blocking: bool
+    :return:
+    """
+    if torch.is_tensor(obj):
+        if obj.device == device:
+            return obj
+        return obj.to(device, non_blocking=non_blocking)
+    if isinstance(obj, dict):
+        return {k: move_any_to_device(v, device, non_blocking=non_blocking) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [move_any_to_device(v, device, non_blocking=non_blocking) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(move_any_to_device(v, device, non_blocking=non_blocking) for v in obj)
+    return obj
