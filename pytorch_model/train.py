@@ -402,7 +402,7 @@ def train_gunet(device, num_workers, pin_memory):
 
         scheduler.step()
 
-        print(f"[Train] [Epoch {epoch:03d}] "
+        tqdm.write(f"[Train] [Epoch {epoch:03d}] "
             f"Train Loss: {train_loss:.6f} | Test Loss: {val_loss:.6f} | "
             f"Vel Loss: {train_vel:.6f} | Stress Loss: {train_stress:.6f} | "
             f"LR: {optimizer.param_groups[0]['lr']:.6f}")

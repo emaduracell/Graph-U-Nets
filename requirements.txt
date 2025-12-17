@@ -8,3 +8,4 @@ tfrecord>=1.14.0
 
 # Visualization
 matplotlib>=3.7.0
+tqdm
