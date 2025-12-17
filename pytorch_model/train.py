@@ -10,6 +10,7 @@ from torch.optim.lr_scheduler import ExponentialLR
 import time
 from typing import List, Tuple
 from dataclasses import dataclass
+from tqdm import tqdm
 from helpers.evaluation_helper import run_final_evaluation
 from helpers.helpers import (format_training_time, create_model_hyperparams, load_config, load_trajectories_preprocessed,
                              print_training_config, setup_paths, get_feature_indices, get_device, print_overfit_samples,
@@ -196,7 +197,7 @@ def _validate_one_epoch(model, test_loader, device, velocity_idxs, stress_idxs, 
     total_vel_loss = 0.0
     total_stress_loss = 0.0
 
-    for batch in test_loader:
+    for batch in tqdm(test_loader, desc="Val", leave=False):
         adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, _, _, _, node_types, _, time_indices = batch
 
         # Adjacency is already sliced to [N, N] in the dataset/collate
@@ -246,7 +247,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
     total_grad_norm = 0.0
     num_batches = 0
 
-    for batch in train_loader:
+    for batch in tqdm(train_loader, desc="Train", leave=False):
         adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, _, _, _, node_types, _, time_indices = batch
 
         # Adjacency is already sliced to [N, N] in the dataset/collate
