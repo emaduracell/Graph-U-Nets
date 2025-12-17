@@ -7,6 +7,7 @@ from helpers.helpers import get_feature_indices, load_config
 from helpers.helpers import print_debug_nodetype, print_debug_shapes_dataloader
 from data.decode_tfrecord_utils import cast_trajectory_from_record
 from data.add_world_edges import add_w_edges
+from model.helpers_models import get_adj_norm_fn
 from types import SimpleNamespace
 import time
 
@@ -295,7 +296,7 @@ def apply_normalization(list_of_trajs, mean, std_dev):
         traj['X_seq_norm'] = X_seq_norm
 
 
-def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict, a_time_var):
+def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict, a_time_var, adj_norm_fn):
     """
     Process a single trajectory: decode, build features, and create trajectory dict.
 
@@ -371,6 +372,9 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
         A_out = A_static  # [N, N]
         world_edges_out = dynamic_edges_static  # single tensor for compatibility
 
+    # Normalize adjacency (static [N,N] or time-varying [T,N,N])
+    A_out = adj_norm_fn(A_out.to(torch.float32))
+
     # compute_duration = time.time() - time_start
     # print(f"[process_single_trajectory] Added world edges in {compute_duration:.4f}s")
     
@@ -406,6 +410,7 @@ def load_all_trajectories(dataconfig):
 
     include_mesh_pos = dataconfig['include_mesh_pos']
     norm_method = dataconfig['normalization_method']
+    adj_norm = dataconfig['adj_norm']
     tfrecord_path = dataconfig['tfrecord_path']
     meta_path = dataconfig['meta_path']
     max_trajs = dataconfig['max_trajs']
@@ -420,6 +425,10 @@ def load_all_trajectories(dataconfig):
         raise ValueError(f"add_world_edges == {dataconfig['add_world_edges']} not supported")
     if norm_method not in ['centroid', 'standard', 'row']:
         raise ValueError(f"norm_method == {norm_method} not supported")
+    if adj_norm not in ['row', 'sym']:
+        raise ValueError(f"adj_norm == {adj_norm} not supported (expected 'row' or 'sym')")
+
+    adj_norm_fn = get_adj_norm_fn(adj_norm)
 
     feat_idx = get_feature_indices(include_mesh_pos)
 
@@ -440,7 +449,9 @@ def load_all_trajectories(dataconfig):
             break
 
         traj = cast_trajectory_from_record(record, meta)
-        dict_traj, X_feat = process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_world_edges_dict, a_time_var)
+        dict_traj, X_feat = process_single_trajectory(
+            traj, include_mesh_pos, norm_method, idx, add_world_edges_dict, a_time_var, adj_norm_fn
+        )
         list_of_trajs.append(dict_traj)
 
     mean, element_num = compute_global_mean(list_of_trajs)
