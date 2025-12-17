@@ -142,8 +142,38 @@ def compute_loss_vectorized(preds, targets, nodetypes, velocity_idxs, stress_idx
     pred_vel = preds[:, :3]
     pred_stress = preds[:, 3:4]
 
+<<<<<<< HEAD
     vel_loss = torch.tensor(0.0, device=preds.device)
     stress_loss = torch.tensor(0.0, device=preds.device)
+=======
+    return total_loss / num_graphs, total_vel_loss / num_graphs, total_stress_loss / num_graphs
+
+
+def _compute_single_graph_loss(pred, target, nodetype, velocity_idxs,
+    stress_idxs):
+    """
+    Compute loss for a single graph.
+
+    Args:
+        pred: torch.Tensor
+        target: torch.Tensor
+        nodetype: torch.Tensor
+        velocity_idxs: slice
+        stress_idxs: slice
+
+    :return: (vel_loss, stress_loss)
+    """
+    vel_mask = (nodetype == NORMAL_NODE)
+    stress_mask = (nodetype == NORMAL_NODE) | (nodetype == BOUNDARY_NODE)
+
+    target_vel = target[:, velocity_idxs]
+    target_stress = target[:, stress_idxs]
+    pred_vel = pred[:, :3]
+    pred_stress = pred[:, 3:4]
+
+    vel_loss = 0.0
+    stress_loss = 0.0
+>>>>>>> 5a8ecefd6bb295d5e9b2e29cff9a75f11741d44d
 
     if vel_mask.any():
         vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
@@ -378,9 +408,9 @@ def train_gunet(device, num_workers, pin_memory):
     return model, eval_loader, history, feat_idx, plots_dir
 
 if __name__ == "__main__":
-    cuda = False
-    num_workers = 0
-    pin_memory = False
+    cuda = True
+    num_workers = 4
+    pin_memory = True
     device = get_device(cuda)
     # TODO: set to false if you have compatibility problems
     torch.backends.cuda.matmul.allow_tf32 = True
