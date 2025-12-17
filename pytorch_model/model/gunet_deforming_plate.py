@@ -182,7 +182,7 @@ class GraphUNet_DefPlate(nn.Module):
         :returns y_pred: [N, F_out]
             predicted node features at t+1
         """
-        # NOTE: adjacency normalization is performed during preprocessing in `data_builder.py`
+        # NOTE: adjacency normalization is performed during preprocessing in data_builder.py
         # Initial GCN
         h0 = self.start_gcn(g, h)  # [N, l_dim]
         # Graph U-Net: multi-scale node embeddings

@@ -37,7 +37,7 @@ class TrainingHistory:
     grad_norms: List[float]
 
     @classmethod
-    def create_empty(cls) -> 'TrainingHistory':
+    def create_empty(cls):
         return cls([], [], [], [], [], [], [])
 
 def _create_standard_dataloaders(dataset, batch_size, shuffle, num_workers, pin_memory):
@@ -263,16 +263,12 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
         if device.type == 'cuda':
             with autocast(device_type=device.type, enabled=amp_enabled):
                 preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
-                batch_loss, vel_loss, stress_loss = compute_loss(
-                    adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
-                    velocity_idxs, stress_idxs
-                )
+                batch_loss, vel_loss, stress_loss = compute_loss(adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
+                                                                 velocity_idxs, stress_idxs)
         else:
             preds_list = model(adj_mat_list, feat_t_mat_list)
-            batch_loss, vel_loss, stress_loss = compute_loss(
-                adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
-                velocity_idxs, stress_idxs
-            )
+            batch_loss, vel_loss, stress_loss = compute_loss(adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
+                                                             velocity_idxs, stress_idxs)
 
         if amp_enabled and scaler is not None:
             scaler.scale(batch_loss).backward()
@@ -298,7 +294,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
 def train_gunet(device, num_workers, pin_memory):
     """Training loop"""
     # Load configuration from YAML
-    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
+    config_path = os.path.join(os.path.dirname(__file__), "pyg_config.yaml")
     config = load_config(config_path)
     # Extract model and training parameters
     model_cfg = config['model']
@@ -306,7 +302,7 @@ def train_gunet(device, num_workers, pin_memory):
     # Load train config
     # datapath: processed_data/data_standard_True so add preprocessed_train.pt
     checkpoint_path, plots_dir = setup_paths(train_cfg)
-    dataconfig = load_config(train_cfg['datapath'] + '/used_dataconfig.yaml')
+    dataconfig = load_config(train_cfg['datapath'] + '/pyg_dataconfig.yaml')
     include_mesh_pos = dataconfig['include_mesh_pos']
     feat_idx = get_feature_indices(include_mesh_pos)
     torch.manual_seed(train_cfg['random_seed'])
@@ -402,10 +398,8 @@ def train_gunet(device, num_workers, pin_memory):
 
         scheduler.step()
 
-        tqdm.write(f"[Train] [Epoch {epoch:03d}] "
-            f"Train Loss: {train_loss:.6f} | Test Loss: {val_loss:.6f} | "
-            f"Vel Loss: {train_vel:.6f} | Stress Loss: {train_stress:.6f} | "
-            f"LR: {optimizer.param_groups[0]['lr']:.6f}")
+        tqdm.write(f"[Train] [Epoch {epoch:03d}] Train Loss: {train_loss:.6f} | Test Loss: {val_loss:.6f} | "
+            f"Vel Loss: {train_vel:.6f} | Stress Loss: {train_stress:.6f} | LR: {optimizer.param_groups[0]['lr']:.6f}")
 
     # Finish up
     total_time = time.time() - start_time
