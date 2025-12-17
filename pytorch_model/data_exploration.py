@@ -172,6 +172,24 @@ def visualize_ground_truth(pos, cells, stress, node_type, title, color_mode="str
         np.array(tri_i), np.array(tri_j), np.array(tri_k)
     ))
 
+    # Give the right side more room for the colorbar
+    fig.update_layout(margin=dict(l=0, r=160, t=60, b=0))
+
+    # Move legend away from the colorbar (e.g., top-left)
+    fig.update_layout(
+        legend=dict(
+            x=0.01, y=0.99,
+            xanchor="left", yanchor="top",
+            bgcolor="rgba(255,255,255,0.6)"
+        )
+    )
+
+    # Push the mesh colorbar further right
+    fig.update_traces(
+        selector=dict(type="mesh3d"),
+        colorbar=dict(x=1.08)  # try 1.05–1.15
+    )
+
     # 3. Dynamic Edges (World Edges)
     if dynamic_edges is not None:
         fig.add_trace(make_dynamic_edges_trace(pos, dynamic_edges))
