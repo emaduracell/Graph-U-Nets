@@ -106,7 +106,7 @@ class GraphUNet_DefPlate(nn.Module):
 
         Initializer.weights_init(self)
 
-    def forward(self, batch_adj_A, batch_feat_X, feat_tp1_mat_list, node_types):
+    def forward(self, batch_adj_A, batch_feat_X):
         """
         Forward over a batch of graphs.
 
@@ -132,8 +132,6 @@ class GraphUNet_DefPlate(nn.Module):
         """
         # Prediction
         preds_list = self.embed(batch_adj_A, batch_feat_X)
-        assert node_types is not None, "node_types must be provided when computing loss."
-        assert len(batch_adj_A) == len(batch_feat_X) == len(feat_tp1_mat_list) == len(node_types)
         return preds_list
 
     def rollout_step(self, A, X_t):
