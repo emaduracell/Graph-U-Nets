@@ -112,13 +112,13 @@ def collate_block_diagonal(batch):
         # Convert to sparse COO indices/values
         if A.is_sparse:
             print(f"[collate_block_diagonal] A is sparse, shape: {A.shape}")
-             A_coo = A.coo()
-             indices = A_coo.indices()
-             values = A_coo.values()
+            A_coo = A.coo()
+            indices = A_coo.indices()
+            values = A_coo.values()
         else:
             print(f"[collate_block_diagonal] A is not sparse, shape: {A.shape}")
-             indices = torch.nonzero(A).t()
-             values = A[indices[0], indices[1]]
+            indices = torch.nonzero(A).t()
+            values = A[indices[0], indices[1]]
 
         # Shift indices
         shifted_indices = indices + cumulative_nodes

@@ -142,14 +142,8 @@ def compute_loss_vectorized(preds, targets, nodetypes, velocity_idxs, stress_idx
     pred_vel = preds[:, :3]
     pred_stress = preds[:, 3:4]
 
-<<<<<<< Current (Your changes)
     vel_loss = preds.new_zeros(())
     stress_loss = preds.new_zeros(())
-=======
-    # Initialize losses as 0.0 (float) to avoid unnecessary tensor allocation
-    vel_loss = 0.0
-    stress_loss = 0.0
->>>>>>> Incoming (Background Agent changes)
 
     if vel_mask.any():
         vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
@@ -161,13 +155,13 @@ def compute_loss_vectorized(preds, targets, nodetypes, velocity_idxs, stress_idx
     
     # TODO sure about this?
     # Ensure all return values are tensors for consistency (backward compatibility)
-    # If they are still floats (no loss computed), convert them to 0-tensors on the correct device
-    if isinstance(vel_loss, float):
-        vel_loss = torch.tensor(vel_loss, device=preds.device)
-    if isinstance(stress_loss, float):
-        stress_loss = torch.tensor(stress_loss, device=preds.device)
-    if isinstance(total_loss, float):
-        total_loss = torch.tensor(total_loss, device=preds.device)
+    # # If they are still floats (no loss computed), convert them to 0-tensors on the correct device
+    # if isinstance(vel_loss, float):
+    #     vel_loss = torch.tensor(vel_loss, device=preds.device)
+    # if isinstance(stress_loss, float):
+    #     stress_loss = torch.tensor(stress_loss, device=preds.device)
+    # if isinstance(total_loss, float):
+    #     total_loss = torch.tensor(total_loss, device=preds.device)
 
     return total_loss, vel_loss, stress_loss
 

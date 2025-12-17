@@ -106,19 +106,19 @@ def get_device(cuda: bool):
         else:
             raise ValueError("CUDA is not available")
     else:
-        if torch.backends.mps.is_available():
-            dev = torch.device("mps")
-            print(f"[get_device] Using device: {dev}")
-        elif torch.cuda.is_available():
-            dev = torch.device("cuda")
-            try:
-                name = torch.cuda.get_device_name(dev)
-                print(f"[get_device] Using CUDA device: {name}")
-            except Exception:
-                print(f"[get_device] Using CUDA device: {dev}")
-        else:
-            dev = torch.device("cpu")
-            print(f"[get_device] Using device: {dev}")
+        # if torch.backends.mps.is_available():
+        #     dev = torch.device("mps")
+        #     print(f"[get_device] Using device: {dev}")
+        # elif torch.cuda.is_available():
+        #     dev = torch.device("cuda")
+        #     try:
+        #         name = torch.cuda.get_device_name(dev)
+        #         print(f"[get_device] Using CUDA device: {name}")
+        #     except Exception:
+        #         print(f"[get_device] Using CUDA device: {dev}")
+        # else:
+        dev = torch.device("cpu")
+        print(f"[get_device] Using device: {dev}")
     return dev
 
 def get_feature_indices(include_mesh_pos):
