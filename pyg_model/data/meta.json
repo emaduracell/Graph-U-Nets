@@ -1,0 +1,60 @@
+{
+  "simulator": "comsol",
+  "dt": 0,
+  "collision_radius": 0.03,
+  "features": {
+    "cells": {
+      "type": "static",
+      "shape": [
+        1,
+        -1,
+        4
+      ],
+      "dtype": "int32"
+    },
+    "node_type": {
+      "type": "static",
+      "shape": [
+        1,
+        -1,
+        1
+      ],
+      "dtype": "int32"
+    },
+    "mesh_pos": {
+      "type": "static",
+      "shape": [
+        1,
+        -1,
+        3
+      ],
+      "dtype": "float32"
+    },
+    "world_pos": {
+      "type": "dynamic",
+      "shape": [
+        400,
+        -1,
+        3
+      ],
+      "dtype": "float32"
+    },
+    "stress": {
+      "type": "dynamic",
+      "shape": [
+        400,
+        -1,
+        1
+      ],
+      "dtype": "float32"
+    }
+  },
+  "field_names": [
+    "cells",
+    "node_type",
+    "mesh_pos",
+    "world_pos",
+    "stress"
+  ],
+  "trajectory_length": 400
+}
