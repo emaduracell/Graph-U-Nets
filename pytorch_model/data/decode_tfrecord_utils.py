@@ -6,8 +6,9 @@ def _cast_to_bytes(value):
     and its elements are objects of python (not numpy objects), it flattens it to an iterator (the assumption is that
     we don't lose info because the shape is (,1) or (1,1)), and gets the first element.
 
-    :param value: np.ndarray | (bytes, bytearray) | Any
-         input value
+    Args:
+        value: np.ndarray | (bytes, bytearray) | Any
+             input value
     :return: an array of bytes of the value
     """
     if isinstance(value, (bytes, bytearray)):
@@ -26,8 +27,9 @@ def _reshape_with_inferred_dim(arr, shape_spec):
     """
     Reshape arr according to shape_spec, where at most one entry may be -1 (to be inferred from arr.size).
 
-    :param arr: np.ndarray
-    :param shape_spec
+    Args:
+        arr: np.ndarray
+        shape_spec
 
     :return arr.reshape(shape)
         reshaped np.ndarray
@@ -60,12 +62,13 @@ def _cast_raw_array(value, dtype, shape_spec):
     It splits in two cases, one if (value is np.ndarray AND value.dtype != object), the other one is the else case.
     For both do: 1. Cast to dtype 2. Reshape
 
-    :param value:
-        input value that I want to decode
-    :param dtype:
-        dtype I want to convert value in.
-    :param shape_spec:
-        shape I want to convert value in.
+    Args:
+        value:
+            input value that I want to decode
+        dtype:
+            dtype I want to convert value in.
+        shape_spec:
+            shape I want to convert value in.
 
     :return converted_arr: np.ndarray
         array converted to desired
@@ -89,10 +92,11 @@ def cast_trajectory_from_record(record, meta):
     Casts the TFRecord into numpy arrays.
     The feature meta["features"] is a dict that contains info about the features and their shape.
 
-    :param record:
-        A TFRecord object
-    :param meta:
-        json file
+    Args:
+        record:
+            A TFRecord object
+        meta:
+            json file
 
     :return trajectory_dict: Dict
         A dict containing all trajectory features

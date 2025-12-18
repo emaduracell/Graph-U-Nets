@@ -7,7 +7,13 @@ from helpers.helpers import load_config
 
 
 def _flatten_dict(d, parent_key=""):
-    """Helper: flatten config dicts."""
+    """
+    Helper: flatten config dicts.
+
+    Args:
+        d: dict to be flattened.
+        parent_key: prefix for the current key (used during recursion).
+    """
     items = []
     for k, v in d.items():
         new_key = f"{parent_key}.{k}" if parent_key else str(k)
@@ -19,7 +25,13 @@ def _flatten_dict(d, parent_key=""):
 
 
 def _add_cfg_footer(model_cfg, train_cfg):
-    """Add a small text block with model_cfg and train_cfg at the bottom."""
+    """
+    Adds a footer to the current plot containing flattened configuration parameters.
+
+    Args:
+        model_cfg: model config.yaml dictionary.
+        train_cfg: train config.yaml dictionary.
+    """
     flat_model = _flatten_dict(model_cfg, "model")
     flat_train = _flatten_dict(train_cfg, "train")
     footer_items = list(flat_model.items()) + list(flat_train.items())
@@ -33,7 +45,14 @@ def _add_cfg_footer(model_cfg, train_cfg):
 
 
 def to_cpu_numpy(x):
-    """Convert Torch tensors/lists to NumPy array on CPU."""
+    """
+    Convert Torch tensors/lists to NumPy array on CPU.
+
+    Args:
+        x: torch tensor or list of tensors to convert.
+
+    :return: numpy array representing the input data.
+    """
     if isinstance(x, torch.Tensor):
         return x.detach().cpu().numpy()
     if isinstance(x, (list, tuple)):
@@ -51,11 +70,18 @@ def to_cpu_numpy(x):
     return np.asarray(x)
 
 
-# ------------------------------------------------------------------------------
-# INDIVIDUAL PLOTTING FUNCTIONS
-# ------------------------------------------------------------------------------
-
 def plot_loss_curves(save_dir, epochs, train_losses, val_losses, model_cfg, train_cfg):
+    """
+    Plot training and validation loss over epochs.
+
+    Args:
+        save_dir: directory path to save the plot image.
+        epochs: list or array of epoch numbers.
+        train_losses: list of training loss values.
+        val_losses: list of validation loss values.
+        model_cfg: dictionary of model configurations for the footer.
+        train_cfg: dictionary of training configurations for the footer.
+    """
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, train_losses, label='Train Loss')
     plt.plot(epochs, val_losses, label='Val Loss')
@@ -70,6 +96,19 @@ def plot_loss_curves(save_dir, epochs, train_losses, val_losses, model_cfg, trai
 
 
 def plot_component_losses(save_dir, epochs, train_stress, train_vel, test_stress, test_vel, model_cfg, train_cfg):
+    """
+    Plot specific stress and velocity loss components for train and test sets.
+
+    Args:
+        save_dir: directory path to save the plot image.
+        epochs: list or array of epoch numbers.
+        train_stress: list of training stress loss values.
+        train_vel: list of training velocity loss values.
+        test_stress: list of test stress loss values.
+        test_vel: list of test velocity loss values.
+        model_cfg: dictionary of model configurations for the footer.
+        train_cfg: dictionary of training configurations for the footer.
+    """
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, train_stress, label='Train stress loss')
     plt.plot(epochs, train_vel, label='Train velocity loss')
@@ -86,6 +125,17 @@ def plot_component_losses(save_dir, epochs, train_stress, train_vel, test_stress
 
 
 def plot_grad_norms(save_dir, epochs, grad_norms, model_cfg, train_cfg):
+    """
+    Plot the average gradient norm per epoch to monitor training stability.
+
+    Args:
+        save_dir: directory path to save the plot image.
+        epochs: list or array of epoch numbers.
+        grad_norms: list of gradient norm values recorded during training.
+        model_cfg: dictionary of model configurations for the footer.
+        train_cfg: dictionary of training configurations for the footer.
+    :return: None
+    """
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, grad_norms, label='Gradient Norm')
     plt.xlabel('Epoch')
@@ -99,6 +149,15 @@ def plot_grad_norms(save_dir, epochs, grad_norms, model_cfg, train_cfg):
 
 
 def plot_weights(save_dir, model, model_cfg, train_cfg):
+    """
+    Plot histograms of the model's learnable weights.
+
+    Args:
+        save_dir: directory path to save the weight plots.
+        model: the PyTorch model instance containing parameters.
+        model_cfg: dictionary of model configurations for the footer.
+        train_cfg: dictionary of training configurations for the footer.
+    """
     weights_dir = os.path.join(save_dir, 'weights')
     os.makedirs(weights_dir, exist_ok=True)
     for name, param in model.named_parameters():
@@ -115,6 +174,15 @@ def plot_weights(save_dir, model, model_cfg, train_cfg):
 
 
 def plot_activations(save_dir, activations, model_cfg, train_cfg):
+    """
+    Plot histograms of the model's activations.
+
+    Args:
+        save_dir: directory path to save the activation plots.
+        activations: dictionary mapping layer names to activation tensors.
+        model_cfg: dictionary of model configurations for the footer.
+        train_cfg: dictionary of training configurations for the footer.
+    """
     acts_dir = os.path.join(save_dir, 'activations')
     os.makedirs(acts_dir, exist_ok=True)
     for name, acts in activations.items():
@@ -131,7 +199,17 @@ def plot_activations(save_dir, activations, model_cfg, train_cfg):
 def plot_pred_vs_true(save_dir, feature_labels, iter_targets, iter_predictions, model_cfg, train_cfg,
                       folder_name="pred_vs_true", suffix=""):
     """
-    Generic Scatter plot function.
+    Generic Scatter plot function to compare predictions against true values.
+
+    Args:
+        save_dir: base directory to save the plots.
+        feature_labels: list of names for each feature being plotted.
+        iter_targets: list or array of ground truth values.
+        iter_predictions: list or array of predicted values.
+        model_cfg: dictionary of model configurations for the footer.
+        train_cfg: dictionary of training configurations for the footer.
+        folder_name: sub-folder name where these specific plots will be saved.
+        suffix: string suffix to append to plot titles and labels (e.g., "Normalized").
     """
     pred_dir = os.path.join(save_dir, folder_name)
     os.makedirs(pred_dir, exist_ok=True)
@@ -171,7 +249,17 @@ def plot_pred_vs_true(save_dir, feature_labels, iter_targets, iter_predictions, 
 def plot_residuals(save_dir, feature_labels, iter_targets, iter_predictions, model_cfg, train_cfg,
                    folder_name="residuals", suffix=""):
     """
-    Generic Residual plot function.
+    Plot residuals (prediction error) vs true values.
+
+    Args:
+        save_dir: base directory to save the plots.
+        feature_labels: list of names for each feature being plotted.
+        iter_targets: list or array of ground truth values.
+        iter_predictions: list or array of predicted values.
+        model_cfg: dictionary of model configurations for the footer.
+        train_cfg: dictionary of training configurations for the footer.
+        folder_name: sub-folder name where these specific plots will be saved.
+        suffix: string suffix to append to plot titles and labels.
     """
     res_dir = os.path.join(save_dir, folder_name)
     os.makedirs(res_dir, exist_ok=True)
@@ -202,16 +290,33 @@ def plot_residuals(save_dir, feature_labels, iter_targets, iter_predictions, mod
         plt.close()
 
 
-# ------------------------------------------------------------------------------
-# MAIN PLOTTING FUNCTION
-# ------------------------------------------------------------------------------
-
-def make_final_plots(save_dir, train_losses, val_losses, grad_norms, model,
-                     activations, predictions, targets,  # Denormalized
-                     predictions_norm, targets_norm,  # Normalized
-                     train_vel_losses, train_stress_losses, test_vel_losses,
+def make_final_plots(save_dir, train_losses, val_losses, grad_norms, model, activations, predictions, targets,
+                     predictions_norm, targets_norm, train_vel_losses, train_stress_losses, test_vel_losses,
                      test_stress_losses, velocity_idxs, stress_idxs, config_path):
-    # 1. Prepare Data (Convert to CPU Numpy)
+    """
+    Main orchestration function to process data and generate all analysis plots.
+
+    Args:
+        save_dir: directory path where all output plots will be saved.
+        train_losses: list of total training losses over epochs.
+        val_losses: list of total validation losses over epochs.
+        grad_norms: list of gradient norms recorded during training.
+        model: the trained PyTorch model instance.
+        activations: dictionary of captured layer activations.
+        predictions: raw (denormalized) model predictions.
+        targets: raw (denormalized) ground truth targets.
+        predictions_norm: normalized model predictions.
+        targets_norm: normalized ground truth targets.
+        train_vel_losses: list of training velocity component losses.
+        train_stress_losses: list of training stress component losses.
+        test_vel_losses: list of test/val velocity component losses.
+        test_stress_losses: list of test/val stress component losses.
+        velocity_idxs: indices corresponding to velocity features in the data.
+        stress_idxs: indices corresponding to stress features in the data.
+        config_path: path to the YAML configuration file to load settings.
+    """
+
+    # Prepare Data (Convert to CPU Numpy)
     train_losses = to_cpu_numpy(train_losses)
     val_losses = to_cpu_numpy(val_losses)
     grad_norms = to_cpu_numpy(grad_norms)
@@ -261,12 +366,6 @@ def make_final_plots(save_dir, train_losses, val_losses, grad_norms, model,
     print("Plotting Gradients...")
     plot_grad_norms(save_dir, epochs, grad_norms, model_cfg, train_cfg)
 
-    # print("Plotting Weights...")
-    # plot_weights(save_dir, model, model_cfg, train_cfg)
-    #
-    # print("Plotting Activations...")
-    # plot_activations(save_dir, activations, model_cfg, train_cfg)
-
     print("Plotting Predictions vs True (Normalized)...")
     plot_pred_vs_true(save_dir, feature_labels, iter_targets_norm, iter_predictions_norm, model_cfg, train_cfg,
                       folder_name="pred_vs_true", suffix="(Normalized)")
@@ -275,7 +374,7 @@ def make_final_plots(save_dir, train_losses, val_losses, grad_norms, model,
     plot_residuals(save_dir, feature_labels, iter_targets, iter_predictions, model_cfg, train_cfg,
                    folder_name="residuals", suffix="(Denorm)")
 
-    # --- Plot Normalized ---
+    # Plot normalized
     print("Plotting Residuals (Normalized)...")
     plot_residuals(save_dir, feature_labels, iter_targets_norm, iter_predictions_norm, model_cfg, train_cfg,
                    folder_name="residuals_norm", suffix="(Normalized)")

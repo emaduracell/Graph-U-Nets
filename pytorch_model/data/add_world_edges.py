@@ -1,10 +1,10 @@
 import torch
 
-NORMAL_NODE_OH = [0, 0]  # value 0 (NORMAL)
+NORMAL_NODE_OH = [0, 0]
 NORMAL_NODE = 0
-SPHERE_NODE_OH = [1, 0]  # value 1 (SPHERE)
+SPHERE_NODE_OH = [1, 0]
 SPHERE_NODE = 1
-BOUNDARY_NODE_OH = [0, 1]  # value 3 (BOUNDARY)
+BOUNDARY_NODE_OH = [0, 1]
 BOUNDARY_NODE = 3
 VELOCITY_MEAN = 0.0
 
@@ -15,10 +15,10 @@ def add_w_edges_neigh(base_A, node_types, pos_t, k):
     If a neighbor is another Sphere node, it ignores it (assumed already handled or irrelevant).
 
     Args:
-        base_A
-        node_types
-        pos_t
-        radius
+        base_A: The base adjacency matrix representing the static mesh structure.
+        node_types: A tensor containing the type identifier for each node (e.g., NORMAL, SPHERE, BOUNDARY).
+        pos_t: A tensor of shape (N, D) representing the positions of nodes at the current time step.
+        k: The number of nearest neighbors to consider for generating dynamic edges.
 
     :return: (A_norm, dynamic_edges)
     """
@@ -63,10 +63,10 @@ def add_w_edges_radius(base_A, node_types, pos_t, radius):
     Excludes existing mesh edges (base_A) and self-loops.
 
     Args:
-        base_A
-        node_types
-        pos_t
-        radius
+        base_A: The base adjacency matrix representing the static mesh structure.
+        node_types: A tensor containing the type identifier for each node.
+        pos_t: A tensor of shape (N, D) representing the positions of nodes at the current time step.
+        radius: The distance threshold; edges are created between nodes within this distance.
 
     :return: (A_norm, dynamic_edges)
         A_norm: Normalized adjacency matrix (including mesh edges + world edges + self loops)
@@ -104,6 +104,15 @@ def add_w_edges_radius(base_A, node_types, pos_t, radius):
 
 
 def add_w_edges(self, base_A, node_types, pos_t):
+    """
+    Wrapper function that implements the various methods of adding world edges, or none of them
+
+    Args:
+        self: The instance of the dataset class containing configuration parameters (e.g., add_world_edges, radius, k_neighb).
+        base_A: The base adjacency matrix representing the static mesh structure.
+        node_types: A tensor containing the type identifier for each node.
+        pos_t: A tensor of shape (N, D) representing the positions of nodes at the current time step.
+    """
     # Add world edges
     if self.add_world_edges == "radius":
         A_dynamic, dynamic_edges = add_w_edges_radius(base_A=base_A, node_types=node_types, pos_t=pos_t,

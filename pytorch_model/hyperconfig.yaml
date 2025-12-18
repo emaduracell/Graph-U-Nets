@@ -14,7 +14,7 @@ constants:
 
 data:
   # As requested: train on 3 trajectories
-  num_train_trajs: 2
+  num_train_trajs: 3
   # Must be "standard" to create a real validation set
   mode: "standard"
   # Fixed split fraction reused across all trials
@@ -26,8 +26,8 @@ data:
 
 study:
   seed: 42
-  trials: 40
-  epochs: 100
+  trials: 16
+  epochs: 200
   show_progress_bar: true
 
   sampler:
@@ -56,13 +56,13 @@ search_space:
     log: false
 
   # Categorical lists
-  dropout_candidates: [0.0, 0.05, 0.1, 0.2]
-  activation_candidates: ["ELU", "ReLU"]
+  dropout_candidates: [0.05]
+  activation_candidates: ["ReLU"] # Relu, ELU
 
   # Must be a list of candidates; each candidate must be a list with same length as base_config model.k_pool_ratios.
   k_pool_ratios_candidates:
     - [0.95, 0.95, 0.95]
-    - [0.9, 0.8, 0.7]
+#    - [0.9, 0.8, 0.7]
 
 output:
   best_config_path: "best_hpo_config.yaml"

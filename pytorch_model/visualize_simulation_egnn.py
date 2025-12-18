@@ -1,10 +1,11 @@
 import torch
 import numpy as np
+import yaml
 import os
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from data.add_world_edges import add_w_edges_radius
-from model_gunet.gunet_deforming_plate import GraphUNet_DefPlate
+from data_helper.add_world_edges import add_w_edges_radius
+from model_egnn.egnn_deforming_plate import EGNN_DefPlate
 from data_builder import build_adjacency_matrix
 from helpers.helpers import get_feature_indices, load_config
 
@@ -20,10 +21,7 @@ META_PATH = "raw_data/meta.json"
 def make_dynamic_edges_trace(coords, edge_index):
     """
     Creates Red Lines for the dynamic interactions (world edges).
-
-    Args:
-        coords: [N, 3] numpy array of node coordinates.
-        edge_index: [2, E] tensor or numpy array defining source and destination nodes.
+    edge_index: [2, E] tensor or numpy array
     """
     if edge_index is None:
         return go.Scatter3d()
@@ -40,6 +38,13 @@ def make_dynamic_edges_trace(coords, edge_index):
         dst = edge_index[1]
 
     x_lines, y_lines, z_lines = [], [], []
+    # Vectorized construction for Plotly lines (point, point, None)
+    # We can interleave: X[src], X[dst], None
+    # shape [E, 3] -> flatten
+
+    # We want a sequence: x_s1, x_d1, None, x_s2, x_d2, None ...
+    # Create array of shape [3, E] -> [x_src, x_dst, nan]
+    # Then transpose to [E, 3] and flatten
 
     nan_vec = np.full(src.shape, None)
 
@@ -58,13 +63,11 @@ def make_dynamic_edges_trace(coords, edge_index):
 def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     """
     Creates a Scatter3d trace that draws the edges of the triangles.
-
-    Args:
-        x, y, z: Arrays containing the x, y, and z coordinates of the vertices.
-        i, j, k: Arrays containing the indices of the vertices for each triangle.
-        color: String specifying the color of the wireframe lines.
-        width: Float specifying the width of the wireframe lines.
     """
+    # 1. Create a list of lines: (i->j), (j->k), (k->i)
+    # To do this efficiently in Plotly without loops, we stack coordinates
+    # in the order: point_i, point_j, point_k, point_i, None
+    # 'None' breaks the line so we don't connect separate triangles.
 
     tri_points = np.vstack([
         i, j, k, i,
@@ -72,11 +75,13 @@ def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     ]).T.flatten()
 
     # Map indices to coordinates
+    # We replace the -1 indices with NaN or None effectively by masking later
     xe = x[tri_points]
     ye = y[tri_points]
     ze = z[tri_points]
 
     # Insert None where we had the -1 index to break the lines
+    # (The standard Plotly trick for disconnected lines)
     xe[4::5] = None
     ye[4::5] = None
     ze[4::5] = None
@@ -87,15 +92,12 @@ def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
         line=dict(color=color, width=width),
         name='wireframe',
         showlegend=False,
-        hoverinfo='skip'
+        hoverinfo='skip'  # Don't show tooltips for the grid lines
     )
 
 
 # Wrapper for model args
 class ArgsWrapper:
-    """
-    Simple wrapper class to emulate an arguments object for storing model hyperparameters.
-    """
     pass
 
 
@@ -103,21 +105,11 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
                         title_pred, color_mode, dynamic_edges):
     """
     Visualizzazione mesh + heatmap stress o node_type.
-
-    Args:
-        pos_true: [N, 3] Numpy array of ground truth node positions.
-        pos_pred: [N, 3] Numpy array of predicted node positions.
-        cells: List or array of cell indices defining the mesh connectivity.
-        stress_true: [N] Numpy array of ground truth stress values.
-        stress_pred: [N] Numpy array of predicted stress values.
-        node_type_true: [N] Numpy array of ground truth node types.
-        node_type_pred: [N] Numpy array of predicted node types.
-        title_true: String title for the ground truth subplot.
-        title_pred: String title for the prediction subplot.
-        color_mode: String, either "stress" or "node_type" to determine coloring strategy.
-        dynamic_edges: [2, E] Array of edge indices for dynamic world edges to visualize.
     """
 
+    # ======================================================
+    # 1) REMOVE BATCH DIMENSION IF PRESENT
+    # ======================================================
     if pos_true.ndim == 3:
         raise ValueError("pos_true should not have a batch dimension")
     if pos_pred.ndim == 3:
@@ -133,6 +125,9 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
     if node_type_pred is not None and node_type_pred.ndim == 2:
         raise ValueError("node_type_pred should not have a batch dimension")
 
+    # ======================================================
+    # 2) TRIANGULATE CELLS
+    # ======================================================
     tri_i, tri_j, tri_k = [], [], []
     for (i0, i1, i2, i3) in cells:
         # Face 1: Bottom
@@ -155,7 +150,11 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
         tri_j.extend([i3])
         tri_k.extend([i2])
 
-    # Stress mode
+    # ======================================================
+    # 3) COLORS / HEATMAP
+    # ======================================================
+
+    # --- STRESS MODE ---
     if color_mode == "stress":
         if stress_true is None:
             intensity_true = np.zeros(pos_true.shape[0])
@@ -169,7 +168,7 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
 
         colorscale = "Viridis"
 
-    # Node type mode
+    # --- NODE TYPE MODE ---
     elif color_mode == "node_type":
         if node_type_true is None:
             intensity_true = np.zeros(pos_true.shape[0])
@@ -187,43 +186,61 @@ def visualize_mesh_pair(pos_true, pos_pred, cells, stress_true, stress_pred, nod
     else:
         raise ValueError("color_mode must be 'stress' or 'node_type'")
 
-    # Figure setup
+    # ======================================================
+    # 4) FIGURE SETUP
+    # ======================================================
     fig = make_subplots(
         rows=1, cols=2,
         specs=[[{"type": "scene"}, {"type": "scene"}]],
         subplot_titles=(title_true, title_pred)
     )
 
-    # Surface mesh
+    # ---------------- TRUE MESH (Surface + Wireframe) ----------------
+    # 1. The Surface
     fig.add_trace(
-        go.Mesh3d(x=pos_true[:, 0], y=pos_true[:, 1], z=pos_true[:, 2],
-                  i=tri_i, j=tri_j, k=tri_k,
-                  intensity=intensity_true,
-                  colorscale=colorscale,
-                  showscale=True,
-                  flatshading=True,
-                  opacity=0.85,
-                  name="true_mesh"
-                  ),
+        go.Mesh3d(
+            x=pos_true[:, 0], y=pos_true[:, 1], z=pos_true[:, 2],
+            i=tri_i, j=tri_j, k=tri_k,
+            intensity=intensity_true,
+            colorscale=colorscale,
+            showscale=True,
+            flatshading=True,
+            opacity=0.85,  # Slight transparency helps see the grid better
+            name="true_mesh"
+        ),
         row=1, col=1
     )
-    # The Wireframe
-    fig.add_trace(make_wireframe(pos_true[:, 0], pos_true[:, 1], pos_true[:, 2],
-                                 np.array(tri_i), np.array(tri_j), np.array(tri_k)), row=1, col=1)
-
-    # The Surface
+    # 2. The Wireframe
     fig.add_trace(
-        go.Mesh3d(x=pos_pred[:, 0], y=pos_pred[:, 1], z=pos_pred[:, 2], i=tri_i, j=tri_j, k=tri_k,
-                  intensity=intensity_pred, colorscale=colorscale, showscale=True, flatshading=True,
-                  opacity=0.85, name="pred_mesh"), row=1, col=2
+        make_wireframe(pos_true[:, 0], pos_true[:, 1], pos_true[:, 2],
+                       np.array(tri_i), np.array(tri_j), np.array(tri_k)),
+        row=1, col=1
     )
-    # The Wireframe
+
+    # ---------------- PRED MESH (Surface + Wireframe) ----------------
+    # 1. The Surface
+    fig.add_trace(
+        go.Mesh3d(
+            x=pos_pred[:, 0], y=pos_pred[:, 1], z=pos_pred[:, 2],
+            i=tri_i, j=tri_j, k=tri_k,
+            intensity=intensity_pred,
+            colorscale=colorscale,
+            showscale=True,
+            flatshading=True,
+            opacity=0.85,
+            name="pred_mesh"
+        ),
+        row=1, col=2
+    )
+    # 2. The Wireframe
     fig.add_trace(make_wireframe(pos_pred[:, 0], pos_pred[:, 1], pos_pred[:, 2],
                                  np.array(tri_i), np.array(tri_j), np.array(tri_k)), row=1, col=2)
-
+    # print(f"dynamic_edges={dynamic_edges}")
     if dynamic_edges is not None:
         fig.add_trace(make_dynamic_edges_trace(pos_pred, dynamic_edges), row=1, col=2)
-
+    # ======================================================
+    # 5) SETTINGS
+    # ======================================================
     fig.update_scenes(aspectmode="data")
     fig.update_layout(height=600, width=1200, title_text="Mesh Comparison")
     fig.show()
@@ -233,17 +250,7 @@ def apply_render_mode(pos_true, pos_pred, stress_true, stress_pred, node_type_tr
     """
     Optionally drop border and/or sphere nodes before rendering based on RENDER_MODE.
 
-    Args:
-        pos_true: Ground truth positions.
-        pos_pred: Predicted positions.
-        stress_true: Ground truth stress.
-        stress_pred: Predicted stress.
-        node_type_true: Ground truth node types.
-        node_type_pred: Predicted node types.
-        cells: Mesh connectivity indices.
-
-    Returns:
-        Filtered copies of inputs with remapped cell indices.
+    Returns filtered copies of inputs with remapped cell indices.
     """
     mode = render_mode.lower()
     if mode == "all":
@@ -279,6 +286,8 @@ def apply_render_mode(pos_true, pos_pred, stress_true, stress_pred, node_type_tr
     return pos_true_f, pos_pred_f, stress_true_f, stress_pred_f, node_type_true_f, node_type_pred_f, cells_reindexed
 
 
+# MULTI-STEP ROLLOUT (USING VELOCITY PREDICTIONS)
+
 def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_idxs, stress_idxs, node_type_idxs,
             world_pos_idxs, add_world_edges, radius):
     """
@@ -287,45 +296,33 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
       - keeps borders fixed (node_type == 3),
       - drives rigid body (node_type == 1) with scripted (ground-truth) motion.
 
-    Args:
-        model: GraphUNet_DefPlate model instance.
-        A: Tensor [N,N]
-            Adjacency matrix.
-        X_seq_norm: Tensor [T,N,F]
-            Normalized feature sequence for this trajectory.
-        mean, std: Tensors [1,1,F]
-            Normalization stats.
-        t0: int
-            Starting time index.
-        steps: int
-            Number of rollout steps.
-        node_type: Tensor [N]
-            Integer node types.
-        vel_idxs: list or slice
-            Indices corresponding to velocity features in the input vector.
-        stress_idxs: list or slice
-            Indices corresponding to stress features in the input vector.
-        node_type_idxs: list or slice
-            Indices corresponding to node type features in the input vector.
-        world_pos_idxs: list or slice
-            Indices corresponding to world position features in the input vector.
-        add_world_edges: bool
-            Flag to enable dynamic world edge computation during rollout.
-        radius: float
-            Radius threshold for creating dynamic world edges.
+    Parameters
+    ----------
+    model : EGNN_DefPlate
+    A : Tensor [N,N]
+        Adjacency matrix.
+    X_seq_norm : Tensor [T,N,F]
+        Normalized feature sequence for this trajectory.
+    mean, std : Tensors [1,1,F]
+        Normalization stats.
+    t0 : int
+        Starting time index.
+    steps : int
+        Number of rollout steps.
+    node_type : Tensor [N]
+        Integer node types.
 
-    Returns:
-        coords_pred_list: list of [N,3] np.arrays of predicted coordinates.
-        stress_pred_list: list of [N] np.arrays of predicted stress values.
-        node_type_pred_list: list of [N] np.arrays of node types.
-        rollout_error_list: list of MSE values per step.
-        dynamic_edges_list: list of edge indices used at each step.
+    Returns
+    -------
+    coords_pred_list : list of [N,3] np.arrays
+    stress_pred_list : list of [N]   np.arrays
+    node_type_pred_list : list of [N] np.arrays
     """
 
     device = A.device
-    mean_vec = mean_vec.to(device)
-    std_vec = std_vec.to(device)
-    node_type = node_type.to(device)
+    mean_vec = mean_vec.to(device)  # [F]
+    std_vec = std_vec.to(device)  # [F]
+    node_type = node_type.to(device)  # [N]
     # Node type features must follow data_loader encoding: [sphere, boundary]
     node_type_onehot = torch.zeros((node_type.shape[0], 2), device=device, dtype=mean_vec.dtype)
     node_type_onehot[:, 0] = (node_type == SPHERE_NODE).float()
@@ -336,72 +333,87 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
     rigid_mask = (node_type == SPHERE_NODE)  # rigid body
     border_mask = (node_type == BOUNDARY_NODE)  # fixed borders
 
-    # initial state at t_0
-    current_norm = X_seq_norm[t0].to(device)
+    # ---------- initial state at t0 ----------
+    current_norm = X_seq_norm[t0].to(device)  # [N,F] or [1,N,F]
     if current_norm.dim() == 3:
         current_norm = current_norm[0]
-
-    current_phys = current_norm * std_vec + mean_vec
-    # ground truth at t0
-    p_hat = current_phys[:, world_pos_idxs].clone()
+    
+    current_phys = current_norm * std_vec + mean_vec  # [N,F]
+    # This is p_hat_0 := p_0 (ground truth at t0)
+    p_hat = current_phys[:, world_pos_idxs].clone()  # [N,3]
 
     # Borders reference positions (fixed in time)
-    pos_border_ref = p_hat[border_mask].clone()
+    pos_border_ref = p_hat[border_mask].clone()  # [Nb,3]
 
     coords_pred_list = []
     stress_pred_list = []
     node_type_pred_list = []
     rollout_error_list = []
-    base_A = A.clone()
+    base_A = A.clone() 
     dynamic_edges_list = []  # Store edges for viz
     for k in range(steps):
-        # Generate world edges for the current predicted state
+        # Generate world edges for the current predicted state with radius=0.03 from paper for deforming plate
         if add_world_edges:
             A_dynamic, dyn_edges = add_w_edges_radius(base_A, node_type, p_hat, radius=radius)
         else:
             A_dynamic = base_A
             dyn_edges = None
 
-        # print(f"dyn_edges={dyn_edges.shape}")
         dynamic_edges_list.append(dyn_edges)
-
+        # ======================================================
+        # 1) Predict NORMALIZED velocity + stress
+        #    v_hat_k, sigma_hat_k from graph at time "k"
+        # ======================================================
         with torch.no_grad():
-            pred = model.rollout_step(A_dynamic, current_norm)
+            pred = model.rollout_step(A_dynamic, current_norm)  # [N,4] normalized
 
         vel_norm = pred[:, :3]  # [N,3]
-        stress_norm = pred[:, 3].unsqueeze(-1)
+        stress_norm = pred[:, 3].unsqueeze(-1)  # [N,1]
 
         # Denormalize predicted velocity & stress (v_hat_k, sigma_hat_k)
-        vel_pred = vel_norm * std_vec[vel_idxs] + mean_vec[vel_idxs]
-        stress_pred = stress_norm * std_vec[stress_idxs] + mean_vec[stress_idxs]
+        vel_pred = vel_norm * std_vec[vel_idxs] + mean_vec[vel_idxs]  # [N,3]
+        stress_pred = stress_norm * std_vec[stress_idxs] + mean_vec[stress_idxs]  # [N,1]
 
+        # ======================================================
+        # 2) p_hat_{k+1} from p_hat_k + v_hat_k (ONLY deformables)
+        # ======================================================
         # Start p_hat_{k+1} as a copy of p_hat_k
-        p_hat_next = p_hat.clone()
-        stress_next = stress_pred.clone()
+        p_hat_next = p_hat.clone()  # [N,3]
+        stress_next = stress_pred.clone()  # [N,1]
 
-        # deformable plate nodes (node_type == 0)  p_hat_{k+1} = p_hat_k + v_hat_k  (for deformable nodes)
+        # --- deformable plate nodes (node_type == 0) ---
+        # This line enforces the desired recurrence strictly:
+        #   p_hat_{k+1} = p_hat_k + v_hat_k  (for deformable nodes)
         p_hat_next[deform_mask] = p_hat[deform_mask] + vel_pred[deform_mask]
 
-        # Rigid body nodes: follow scripted (ground-truth) motion at time t0 + 1 + k
-        gt_norm_step = X_seq_norm[t0 + 1 + k].to(device)
+        # ======================================================
+        # 3) Rigid body nodes: follow scripted (ground-truth) motion
+        #    at time t0 + 1 + k
+        # ======================================================
+        gt_norm_step = X_seq_norm[t0 + 1 + k].to(device)  # [N,F] or [1,N,F]
         if gt_norm_step.dim() == 3:
             raise ValueError("gt_norm_step should not have a batch dimension")
 
-        gt_phys_step = gt_norm_step * std_vec + mean_vec
-        p_rigid_gt = gt_phys_step[:, :3]
-        v_rigid_gt = gt_phys_step[:, vel_idxs]
-        s_rigid_gt = gt_phys_step[:, stress_idxs]
+        gt_phys_step = gt_norm_step * std_vec + mean_vec  # [N,F]
+        p_rigid_gt = gt_phys_step[:, :3]  # [N,3]
+        v_rigid_gt = gt_phys_step[:, vel_idxs]  # [N,3]
+        s_rigid_gt = gt_phys_step[:, stress_idxs]  # [N,1]
 
         # drive rigid nodes with GT
         p_hat_next[rigid_mask] = p_rigid_gt[rigid_mask]
         vel_pred[rigid_mask] = v_rigid_gt[rigid_mask]
         stress_next[rigid_mask] = s_rigid_gt[rigid_mask]
 
-        # Fixed borders
+        # ======================================================
+        # 4) Fixed borders: fixed positions + zero velocity
+        # ======================================================
         p_hat_next[border_mask] = pos_border_ref
         vel_pred[border_mask] = 0.0  # explicitly zero velocity
+        # stress_next[border_mask] stays as model prediction
 
-        # Store p_k hat
+        # ======================================================
+        # 5) Store p_hat_{k+1} for visualization
+        # ======================================================
         coords_pred_list.append(p_hat_next.detach().cpu().numpy())
         stress_pred_list.append(stress_next.detach().cpu().numpy())
         node_type_pred_list.append(node_type.detach().cpu().numpy())
@@ -409,8 +421,9 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
         # Calculate MSE: mean((Pred - True)^2)
         mse_step = torch.mean((p_hat_next - p_gt_next) ** 2)
         rollout_error_list.append(mse_step.item())
-
-        # Build physical features X_{k+1} from (p_hat_{k+1}, v_hat_k+rigid/border overrides)
+        # ===========================================================================================
+        # 6) Build physical features X_{k+1} from (p_hat_{k+1}, v_hat_k+rigid/border overrides)
+        # ==========================================================================================
         X_next_phys = torch.zeros_like(current_phys)
         X_next_phys[:, world_pos_idxs] = p_hat_next
         if world_pos_idxs.start > 0:
@@ -428,30 +441,9 @@ def rollout(model, A, X_seq_norm, mean_vec, std_vec, t0, steps, node_type, vel_i
 
     return coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list, dynamic_edges_list
 
-
 def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, dim_in, render_mode, rollout_steps,
          traj_idx, t_step, rollout_set, preprocessed_path, add_world_edges, checkpoint_path):
-    """
-    Main execution function to load data, load the model, and perform visualization or rollout.
-
-    Args:
-        mesh_pos_idxs: Indices for mesh position features.
-        world_pos_idxs: Indices for world position features.
-        node_type_idxs: Indices for node type features.
-        vel_idxs: Indices for velocity features.
-        stress_idxs: Indices for stress features.
-        dim_in: Input dimension for the neural network.
-        render_mode: String specifying rendering filter ('all', 'no_border', etc.).
-        rollout_steps: Number of steps to simulate in the rollout.
-        traj_idx: Index of the trajectory to load from the dataset.
-        t_step: Initial time step index for the simulation.
-        rollout_set: Boolean, if True runs a multi-step rollout, else single step.
-        preprocessed_path: Path to the preprocessed dataset file.
-        add_world_edges: Boolean, determines if dynamic edges are calculated.
-        checkpoint_path: Path to the saved model checkpoint.
-    """
-
-    # Load data
+    # ---------------------- LOAD DATA ----------------------
     print("Loading trajectory...")
     # Prefer preprocessed data (same as training); fall back to raw TFRecord if missing
     if os.path.exists(preprocessed_path):
@@ -466,30 +458,31 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
         raise ValueError(f"Preprocessed data not found at {preprocessed_path}")
     traj = list_of_trajs[traj_idx]
 
-    A = traj["A"]
-    X_seq_norm = traj["X_seq_norm"]
-    mean = traj["mean"]
-    std = traj["std"]
-    cells = traj["cells"]
-    node_type = traj["node_type"]
+    A = traj["A"]  # [T,N,N] or [N,N] if static
+    X_seq_norm = traj["X_seq_norm"]  # [T,N,F]
+    mean = traj["mean"]  # [1,1,F]
+    std = traj["std"]  # [1,1,F]
+    cells = traj["cells"]  # [C,4]
+    node_type = traj["node_type"]  # [N]
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Reconstruct clean base_A from cells for rollout.
+    
+    # Reconstruct clean base_A from cells for rollout (mesh only)
+    # This ensures we don't carry over world edges from the dataset
     num_nodes = X_seq_norm.shape[1]
     if isinstance(cells, torch.Tensor):
         cells_np = cells.cpu().numpy()
     else:
         cells_np = cells
     base_A_clean = build_adjacency_matrix(cells_np, num_nodes).to(device)
-    A = base_A_clean
+    A = base_A_clean  # Always use clean mesh adjacency for rollout
 
     X_seq_norm = X_seq_norm.to(device)
     mean = mean.to(device)
     std = std.to(device)
     node_type = node_type.to(device)
 
-    # Select time step
+    # ---------------------- SELECT TIME STEP ----------------------
     T = X_seq_norm.shape[0]
     t = t_step
     if not (0 <= t < T - 1):
@@ -504,7 +497,7 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
     if X_tp_norm.dim() == 3:
         raise ValueError("X_tp_norm should not have a batch dimension")
 
-    # Build model
+    # ---------------------- BUILD MODEL ----------------------
     # Load model hyperparameters from the same YAML used in training
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
@@ -521,18 +514,49 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
 
     # dim_in = X_seq_norm.shape[2]
     # Model trained to output [vx,vy,vz,stress]
-    model = GraphUNet_DefPlate(dim_in, 3, 1, myargs, adj_norm=model_cfg['adj_norm']).to(device)
     state = torch.load(checkpoint_path, map_location=device)
-
-    # Backwards compatibility: old checkpoints used "s_gcn" instead of "start_gcn"
-    if "s_gcn.proj.weight" in state:
-        state["start_gcn.proj.weight"] = state.pop("s_gcn.proj.weight")
-    if "s_gcn.proj.bias" in state:
-        state["start_gcn.proj.bias"] = state.pop("s_gcn.proj.bias")
-    model.load_state_dict(state)
+    
+    # Detect architecture from checkpoint keys
+    state_keys = list(state.keys())
+    # Check for legacy GUNet architecture markers 
+    is_gunet = any(any(marker in k for k in state_keys) for marker in ["start_gcn", "g_unet", "velocity_mlp", "stress_mlp"])
+    # Check for EGNN architecture markers 
+    is_egnn = any(any(marker in k for k in state_keys) for marker in ["input_mlp", "egnn_layers", "phi_v", "stress_head"])
+    
+    if is_gunet and not is_egnn:
+        gunet_keys_sample = [k for k in state_keys if any(marker in k for marker in ['g_unet', 'start_gcn', 'velocity_mlp', 'stress_mlp'])][:5]
+        train_script_path = os.path.join(os.path.dirname(__file__), "train.py")
+        raise ValueError(
+            f"\n{'='*80}\n"
+            f"ARCHITECTURE MISMATCH: GUNet checkpoint detected, but script requires EGNN\n"
+            f"{'='*80}\n"
+            f"Checkpoint: {checkpoint_path}\n"
+            f"Checkpoint architecture: GUNet (old checkpoint)\n"
+            f"Script expects: EGNN_DefPlate\n\n"
+            f"SOLUTION: Train a new EGNN model\n"
+            f"  Run: python {train_script_path}\n"
+            f"  This will create a new EGNN checkpoint at: {checkpoint_path}\n"
+            f"  Then re-run this visualization script.\n"
+            f"{'='*80}\n"
+        )
+    
+    if not is_egnn:
+        raise ValueError(
+            f"Could not detect EGNN model architecture from checkpoint at {checkpoint_path}. "
+            f"Expected EGNN architecture (keys like 'input_mlp', 'egnn_layers', 'phi_v', 'stress_head'). "
+            f"Found keys: {list(state_keys)[:10]}..."
+        )
+    
+    model = EGNN_DefPlate(dim_in, 3, 1, myargs, adj_norm=model_cfg['adj_norm']).to(device)
+    # Load with strict=False to handle minor key mismatches, but warn if there are issues
+    missing_keys, unexpected_keys = model.load_state_dict(state, strict=False)
+    if missing_keys:
+        print(f"Warning: Missing keys in checkpoint: {missing_keys[:5]}... (total: {len(missing_keys)})")
+    if unexpected_keys:
+        print(f"Warning: Unexpected keys in checkpoint (will be ignored): {unexpected_keys[:5]}... (total: {len(unexpected_keys)})")
     model.eval()
 
-    # One step prediction
+    # ---------------------- ONE-STEP PREDICTION ----------------------
     # Ground-truth coordinates and von Mises stress at t+1 (for comparison)
     mean_vec = mean[0, 0]
     std_vec = std[0, 0]
@@ -544,11 +568,22 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
     stress_true = stress_true.cpu().numpy().squeeze(-1)
 
     # Use rollout with 1 step to integrate predicted velocities
-    coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list, dynamic_edges_list = \
-        rollout(model=model, A=A, X_seq_norm=X_seq_norm, mean_vec=mean_vec, std_vec=std_vec, t0=t, steps=1,
-                node_type=node_type, vel_idxs=vel_idxs, stress_idxs=stress_idxs, node_type_idxs=node_type_idxs,
-                world_pos_idxs=world_pos_idxs, add_world_edges=add_world_edges,
-                radius=dataconfig.get('radius_world_edge', 0.03))
+    coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list, dynamic_edges_list = rollout(
+        model=model,
+        A=A,
+        X_seq_norm=X_seq_norm,
+        mean_vec=mean_vec,
+        std_vec=std_vec,
+        t0=t,
+        steps=1,
+        node_type=node_type,
+        vel_idxs=vel_idxs,
+        stress_idxs=stress_idxs,
+        node_type_idxs=node_type_idxs,
+        world_pos_idxs=world_pos_idxs,
+        add_world_edges=add_world_edges,
+        radius=dataconfig.get('radius_world_edge', 0.03)
+    )
 
     pos_pred = coords_pred_list[0]
     stress_pred = stress_pred_list[0].squeeze(-1)
@@ -561,14 +596,18 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
     if isinstance(cells, torch.Tensor):
         cells = cells.cpu().numpy()
 
-    # Single step
+    # ---------------------- SINGLE STEP VISUALIZE ----------------------
     pos_true, pos_pred, stress_true, stress_pred, node_type_true, node_type_pred, cells_filtered = apply_render_mode(
         pos_true, pos_pred, stress_true, stress_pred, node_type_true, node_type_pred, cells
     )
 
     if not rollout_set:
+        
+        # We need tensors for add_edges
         base_A_tensor = A
         node_type_tensor = node_type
+        # pos_pred is numpy, convert back to tensor for edge computation or use the tensor from rollout
+        # coords_pred_list[0] was p_hat_next (tensor)
         pos_pred_tensor = torch.tensor(pos_pred, device=device, dtype=torch.float32)
 
         if add_world_edges:
@@ -576,23 +615,43 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
         else:
             dynamic_edges_single = None
 
-        visualize_mesh_pair(pos_true=pos_true, pos_pred=pos_pred, stress_true=stress_true, stress_pred=stress_pred,
-                            node_type_true=node_type_true, node_type_pred=node_type_pred, cells=cells_filtered,
-                            color_mode="stress", title_true=f"Ground Truth t={t + 1}",
-                            title_pred=f"Prediction t={t + 1}", dynamic_edges=dynamic_edges_single)
+        visualize_mesh_pair(
+            pos_true=pos_true,
+            pos_pred=pos_pred,
+            stress_true=stress_true,
+            stress_pred=stress_pred,
+            node_type_true=node_type_true,
+            node_type_pred=node_type_pred,
+            cells=cells_filtered,
+            color_mode="stress",  # or "node_type"
+            title_true=f"Ground Truth t={t + 1}",
+            title_pred=f"Prediction t={t + 1}",
+            dynamic_edges=dynamic_edges_single
+        )
         return
 
-    # Multi step rollout
+    # ---------------------- MULTI-STEP ROLLOUT ----------------------
     steps = min(rollout_steps, T - 1 - t)
     print(f"\nPerforming {steps}-step rollout...")
 
-    coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list, dynamic_edges_list = \
-        rollout(model=model, A=A, X_seq_norm=X_seq_norm, mean_vec=mean_vec, std_vec=std_vec, t0=t,
-                steps=steps, node_type=node_type, vel_idxs=vel_idxs, stress_idxs=stress_idxs,
-                node_type_idxs=node_type_idxs, world_pos_idxs=world_pos_idxs, add_world_edges=add_world_edges,
-                radius=dataconfig.get('radius_world_edge', 0.03))
+    coords_pred_list, stress_pred_list, node_type_pred_list, rollout_error_list, dynamic_edges_list = rollout(
+        model=model,
+        A=A,
+        X_seq_norm=X_seq_norm,
+        mean_vec=mean_vec,
+        std_vec=std_vec,
+        t0=t,
+        steps=steps,
+        node_type=node_type,
+        vel_idxs=vel_idxs,
+        stress_idxs=stress_idxs,
+        node_type_idxs=node_type_idxs,
+        world_pos_idxs=world_pos_idxs,
+        add_world_edges=add_world_edges,
+        radius=dataconfig.get('radius_world_edge', 0.03)
+    )
 
-    # Visualize each step
+    # ---- visualize each step ----
     for k in range(steps):
 
         # true values at step k
@@ -623,17 +682,31 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
                             cells=cells_filtered, color_mode="stress", title_true=f"Ground Truth t={t + 1 + k}",
                             title_pred=f"Prediction t={t + 1 + k}", dynamic_edges=dynamic_edges_list[k])
 
-    # Plot rollout error
+    # ======================================================
+    # PLOT ROLLOUT ERROR
+    # ======================================================
     print("\nPlotting Rollout Error...")
 
     fig_err = go.Figure()
 
-    fig_err.add_trace(go.Scatter(x=list(range(1, steps + 1)), y=rollout_error_list, mode='lines+markers',
-                                 name='MSE Error', line=dict(color='red', width=2), marker=dict(size=6)))
+    fig_err.add_trace(go.Scatter(
+        x=list(range(1, steps + 1)),
+        y=rollout_error_list,
+        mode='lines+markers',
+        name='MSE Error',
+        line=dict(color='red', width=2),
+        marker=dict(size=6)
+    ))
 
-    fig_err.update_layout(title=f"Rollout Position Error (MSE) over {steps} steps", xaxis_title="Rollout Step",
-                          yaxis_title="Mean Squared Error (Physical Units)", template="plotly_white", height=500,
-                          width=900, showlegend=True)
+    fig_err.update_layout(
+        title=f"Rollout Position Error (MSE) over {steps} steps",
+        xaxis_title="Rollout Step",
+        yaxis_title="Mean Squared Error (Physical Units)",
+        template="plotly_white",
+        height=500,
+        width=900,
+        showlegend=True
+    )
 
     fig_err.show()
 
@@ -647,24 +720,41 @@ if __name__ == "__main__":
     render_mode = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
     config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
-    preprocessed_path = config['training']['datapath'] + "/preprocessed_train.pt"
-
+    
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    datapath = os.path.join(base_dir, config['training']['datapath'])
+    preprocessed_path = os.path.join(datapath, "preprocessed_train.pt")
+    
     # Load used_dataconfig.yaml to get data processing parameters
-    used_dataconfig_path = os.path.join(config['training']['datapath'], "used_dataconfig.yaml")
+    used_dataconfig_path = os.path.join(datapath, "used_dataconfig.yaml")
     if os.path.exists(used_dataconfig_path):
         dataconfig = load_config(used_dataconfig_path)
+        include_mesh_pos = dataconfig['include_mesh_pos']
+        add_world_edges = dataconfig['add_world_edges']
     else:
-        raise ValueError(f"Warning: {used_dataconfig_path} not found. Using defaults.")
-    include_mesh_pos = dataconfig['include_mesh_pos']
-    add_world_edges = dataconfig['add_world_edges']
+        print(f"Warning: {used_dataconfig_path} not found. Using defaults.")
+        # Default values based on dataconfig.yaml
+        include_mesh_pos = True
+        add_world_edges = "radius"
 
-    dataset_name = os.path.basename(os.path.normpath(config['training']["datapath"]))
-    out_dir = os.path.join(config['training']["model_path_out"], dataset_name)
-    checkpoint_path = os.path.join(out_dir, "model.pt")
-
+    dataset_name = os.path.basename(os.path.normpath(datapath))
+    # Note: setup_paths in train.py saves relative to current directory, not base_dir
+    
+    script_dir = os.path.dirname(__file__)
+    checkpoint_path_script_dir = os.path.join(script_dir, config['training']["model_path_out"], dataset_name, "model.pt")
+    checkpoint_path_base_dir = os.path.join(base_dir, config['training']["model_path_out"], dataset_name, "model.pt")
+    
+    # Prefer the checkpoint in script directory (where train.py saves it)
+    if os.path.exists(checkpoint_path_script_dir):
+        checkpoint_path = checkpoint_path_script_dir
+    elif os.path.exists(checkpoint_path_base_dir):
+        checkpoint_path = checkpoint_path_base_dir
+    else:
+        checkpoint_path = checkpoint_path_script_dir  # Use script dir path for error message
+                       
     # Use helper to get feature indices
     feat_idx = get_feature_indices(include_mesh_pos)
-
+    
     mesh_pos_idxs = feat_idx.mesh_pos
     world_pos_idxs = feat_idx.world_pos
     node_type_idxs = feat_idx.nodetype

@@ -34,7 +34,7 @@ from helpers.helpers import (
     load_trajectories_preprocessed,
     move_any_to_device,
 )
-from model.gunet_deforming_plate import GraphUNet_DefPlate
+from model_gunet.gunet_deforming_plate import GraphUNet_DefPlate
 
 
 def _require(cfg: Dict[str, Any], key_path: str) -> Any:
@@ -310,7 +310,7 @@ def run_study(
     device = get_device(cuda_flag)
 
     # Load dataconfig + indices for features
-    dataconfig_path = os.path.join(train_cfg["datapath"], "pyg_dataconfig.yaml")
+    dataconfig_path = os.path.join(train_cfg["datapath"], "used_dataconfig.yaml")
     dataconfig = load_config(dataconfig_path)
     include_mesh_pos = dataconfig["include_mesh_pos"]
     feat_idx = get_feature_indices(include_mesh_pos)

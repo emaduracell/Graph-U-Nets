@@ -7,7 +7,7 @@ from model.gcn_model import GCN
 class GraphUnetNoPool(nn.Module):
     """
     Graph U-Net architecture without pooling/unpooling.
-    Just encoder GCNs → bottom GCN → decoder GCNs with skip connections.
+    Just encoder GCNs, bottom GCN, decoder GCNs with skip connections.
     """
 
     def __init__(self, num_layers, in_dim, out_dim, dim, act, drop_p, adj_norm):

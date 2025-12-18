@@ -45,8 +45,9 @@ def norm_g(g):
     1. Sums across columns, that is, gives a vector where element i is the sum of all elements of row i.
     2. Divides every row i of the adjacency matrix by degrees[i]
 
-    :param g:
-        adjacency matrix of the graph
+    Args:
+        g:
+            adjacency matrix of the graph
 
     :return: g
         new row-normalized adjacency matrix
@@ -57,13 +58,17 @@ def norm_g(g):
     g = g / degrees
     return g
 
-def norm_adj_sym(A: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+def norm_adj_sym(A, eps):
     """
-    Symmetric normalization: D^{-1/2} A D^{-1/2}
-    A: [N, N] or [B, N, N]
+    Symmetric normalization
+
+    Args:
+        A: [N, N] or [B, N, N]
+        eps: avoids division by zero
+    :return normalized matrix
     """
-    deg = A.sum(dim=-1)                              # [N] or [B, N]
-    inv_sqrt_deg = (deg.clamp_min(eps)).pow(-0.5)    # avoid inf for deg=0
+    deg = A.sum(dim=-1)
+    inv_sqrt_deg = (deg.clamp_min(eps)).pow(-0.5)
 
     if A.dim() == 2:
         return inv_sqrt_deg[:, None] * A * inv_sqrt_deg[None, :]
@@ -72,7 +77,14 @@ def norm_adj_sym(A: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
     else:
         raise ValueError(f"A must be 2D or 3D, got shape {tuple(A.shape)}")
 
-def get_adj_norm_fn(adj_norm: str):
+def get_adj_norm_fn(adj_norm):
+    """
+    Returns the proper callable function, given the input parameter
+    Args:
+        adj_norm: str
+            desired normalization functrion
+    :return: callable function
+    """
     if adj_norm == "sym":
         return norm_adj_sym
     if adj_norm == "row":

@@ -2,12 +2,21 @@ import yaml
 import torch
 from dataclasses import dataclass
 import os
-from typing import List, Tuple, Optional
-import numpy as np
+
 
 @dataclass
 class FeatureIndices:
-    """Container for feature slice indices."""
+    """
+    Container for feature slice indices.
+
+    Args:
+        world_pos: slice for world position indices.
+        velocity: slice for velocity indices.
+        stress: slice for stress indices.
+        dim_in: int representing the input dimension size.
+        mesh_pos: slice for mesh position indices or None.
+        nodetype: slice for node type indices.
+    """
     world_pos: slice
     velocity: slice
     stress: slice
@@ -15,30 +24,37 @@ class FeatureIndices:
     mesh_pos: slice | None
     nodetype: slice
 
+
 def load_config(config_path):
-    """Load model and training configuration from YAML file."""
+    """
+    Load model and training configuration from YAML file.
+
+    Args:
+        config_path: str, path to the configuration YAML file.
+
+    Returns:
+        dict: The loaded configuration dictionary.
+    """
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     return config
 
+
 def format_training_time(seconds):
-    """Format training time as hours, minutes, seconds."""
+    """
+    Format training time as hours, minutes, seconds.
+
+    Args:
+        seconds: float, the duration in seconds.
+
+    Returns:
+        str: Formatted time string.
+    """
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
     return f"{hours}h {minutes}m {secs}s"
 
-# def setup_paths(train_cfg):
-#     """Set up checkpoint and plots directory paths."""
-#     preprocessed_data_path = train_cfg['datapath'] + "/preprocessed_train.pt"
-#     dataconfig = load_config(train_cfg['datapath'] + "/used_dataconfig.yaml")
-#     base_name = preprocessed_data_path.rsplit("/", 1)[0]
-#
-#     checkpoint_path = f"{train_cfg['model_path_out']}model_{base_name}/"
-#     plots_dir = os.path.join(f"{train_cfg['model_path_out']}model_{base_name}", "plots")
-#     return checkpoint_path, plots_dir
-
-import os
 
 def setup_paths(train_cfg):
     """
@@ -46,6 +62,12 @@ def setup_paths(train_cfg):
       model_out/<dataset_name>/model.pt
       model_out/<dataset_name>/plots/
     where <dataset_name> is the last folder of train_cfg['datapath']
+
+    Args:
+        train_cfg: dict, training configuration containing paths.
+
+    Returns:
+        tuple: A tuple containing the checkpoint path and plots directory path.
     """
     dataset_name = os.path.basename(os.path.normpath(train_cfg["datapath"]))
 
@@ -61,7 +83,15 @@ def setup_paths(train_cfg):
 
 
 def create_model_hyperparams(model_cfg):
-    """Create model hyperparameters object from config."""
+    """
+    Create model hyperparameters object from config.
+
+    Args:
+        model_cfg: dict, configuration dictionary for the model.
+
+    Returns:
+        object: An object with attributes set from the config.
+    """
     hyperparams = lambda: None
     hyperparams.activation_gnn = model_cfg['activation_gnn']
     hyperparams.activation_mlps_final = model_cfg['activation_mlps_final']
@@ -72,15 +102,16 @@ def create_model_hyperparams(model_cfg):
     hyperparams.dropout_mlps_final = model_cfg['dropout_mlps_final']
     return hyperparams
 
+
 def print_training_config(train_cfg, train_loader):
     """
     Print training configuration summary.
 
     Args:
         train_loader: DataLoader
-            data loader
+            data loader containing the training data
         train_cfg: Dict
-            dictionary containing train configuration
+            dictionary containing train configuration parameters
     """
     print("\n=================================================")
     print("                  TRAINING")
@@ -93,8 +124,17 @@ def print_training_config(train_cfg, train_loader):
     print(f"Number of trajectories: {train_cfg['num_train_trajs']}")
     print(f"Train loader batches: {len(train_loader)}\n")
 
-def get_device(cuda: bool):
-    """Determine the best available device."""
+
+def get_device(cuda):
+    """
+    Determine the best available device.
+
+    Args:
+        cuda: bool, flag indicating whether to try using CUDA.
+
+    Returns:
+        torch.device: The selected device (CUDA, MPS, or CPU).
+    """
     if cuda:
         if torch.cuda.is_available():
             dev = torch.device("cuda")
@@ -121,9 +161,16 @@ def get_device(cuda: bool):
             print(f"[get_device] Using device: {dev}")
     return dev
 
-def get_device_pyg(cuda: bool):
+
+def get_device_pyg(cuda):
     """
     Determine the best available device.
+
+    Args:
+        cuda: bool, flag indicating whether to try using CUDA.
+
+    Returns:
+        torch.device: The selected device (CUDA or CPU).
     """
     if cuda:
         if torch.cuda.is_available():
@@ -148,20 +195,38 @@ def get_device_pyg(cuda: bool):
             print(f"[get_device] Using device: {dev}")
     return dev
 
+
 def get_feature_indices(include_mesh_pos):
-    """Get feature indices based on whether mesh positions are included."""
+    """
+    Get feature indices based on whether mesh positions are included.
+
+    Args:
+        include_mesh_pos: bool, flag to determine if mesh positions should be included.
+
+    Returns:
+        FeatureIndices: Object containing slice indices for features.
+    """
     if include_mesh_pos:
         # mesh_pos(3) + world_pos(3) + node_type(2) + vel(3) + stress(1) + kinematic_vel_tp1(3)
-        return FeatureIndices(mesh_pos = slice(0,3), world_pos=slice(3, 6), velocity=slice(8, 11), stress=slice(11, 12),
-                              dim_in=12, nodetype=slice(6,8))
+        return FeatureIndices(mesh_pos=slice(0, 3), world_pos=slice(3, 6), velocity=slice(8, 11), stress=slice(11, 12),
+                              dim_in=12, nodetype=slice(6, 8))
     else:
         # world_pos(3) + node_type(2) + vel(3) + stress(1) + kinematic_vel_tp1(3)
         return FeatureIndices(world_pos=slice(0, 3), velocity=slice(5, 8), stress=slice(8, 9), dim_in=9,
-                              nodetype=slice(6,8), mesh_pos=None)
+                              nodetype=slice(6, 8), mesh_pos=None)
 
 
 def load_trajectories_preprocessed(data_path, num_train_trajs):
-    """Load preprocessed trajectories from disk."""
+    """
+    Load preprocessed trajectories from disk.
+
+    Args:
+        data_path: str
+            Path to the saved trajectory data file.
+        num_train_trajs: int or None
+            Maximum number of trajectories to load.
+    :return: List of loaded trajectory tensors.
+    """
     if not os.path.exists(data_path):
         raise FileNotFoundError(
             f"Preprocessed data not found at {data_path}\n"
@@ -179,7 +244,15 @@ def load_trajectories_preprocessed(data_path, num_train_trajs):
 
     return list_of_trajs
 
+
 def print_overfit_samples(loader):
+    """
+    Print information about samples in the loader for overfitting diagnosis.
+
+    Args:
+        loader: DataLoader
+            The data loader containing the batch.
+    """
     batch = next(iter(loader))
     adj, X_t, X_tp1, mean, std, cells, node_types, traj_ids, time_indices = batch
 
@@ -189,6 +262,28 @@ def print_overfit_samples(loader):
 
 
 def print_debug_shapes_dataloader(node_type, idx, mesh_pos, traj, include_mesh_pos, mesh_cells, stress, world_pos):
+    """
+    Print debug information regarding tensor shapes and types.
+
+    Args:
+        node_type: tensor or array
+            Data representing node types.
+        idx: int
+            Current iteration index.
+        mesh_pos: tensor or array
+            Data representing mesh positions.
+        traj: object
+            The trajectory object being processed.
+        include_mesh_pos: bool
+            Flag indicating if mesh position is included.
+        mesh_cells: tensor or array
+            Data representing mesh cells.
+        stress: tensor or array
+            Data representing stress values.
+        world_pos: tensor or array
+            Data representing world positions.
+    """
+
     if idx == 0 or idx == 1 or idx == 2:
         print(f"traj: \n \t type(traj) = {type(traj)}, len={len(traj)}")
         if include_mesh_pos:
@@ -215,7 +310,17 @@ def print_debug_shapes_dataloader(node_type, idx, mesh_pos, traj, include_mesh_p
             f"\n \t len(mesh_cells[0])={len(mesh_cells[0])}")
         idx += 1
 
+
 def print_debug_nodetype(idx, node_type):
+    """
+    Print debug information specifically for node types.
+
+    Args:
+        idx: int
+            Current iteration index.
+        node_type: tensor or array
+            Data representing node types.
+    """
     # Debug
     if idx == 1 or idx == 2:
         print(
@@ -223,7 +328,15 @@ def print_debug_nodetype(idx, node_type):
             f"\n \t type(node_type[0][0])={type(node_type[0][0])}) \n \t len(node_type)={len(node_type)} "
             f"\n \t len(node_type[0])={len(node_type[0])}")
 
+
 def tensor_bytes(x):
+    """
+    Calculate the total size in bytes of the input tensor or collection.
+
+    Args:
+        x: tensor, list, dict or tuple
+            The input object to calculate size for.
+    """
     if torch.is_tensor(x):
         return x.nelement() * x.element_size()
     if isinstance(x, dict):
@@ -232,15 +345,20 @@ def tensor_bytes(x):
         return sum(tensor_bytes(v) for v in x)
     return 0
 
+
 def move_any_to_device(obj, device, non_blocking):
     """
     Recursively move tensors inside nested (dict/list/tuple) structures to device.
 
     Args:
-        obj:
+        obj: tensor, list, dict, or tuple
+            The object to move to the device.
         device: torch.device
+            The target device.
         non_blocking: bool
-    :return:
+            parameter set to True to avoid making training slower
+
+    :return: object to device
     """
     if torch.is_tensor(obj):
         if obj.device == device:

@@ -4,8 +4,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
 import os
 import numpy as np
-from data.defplate_dataset import DefPlateDataset, collate_unet
-from model.gunet_deforming_plate import GraphUNet_DefPlate
+from data_helper.defplate_dataset import DefPlateDataset, collate_unet
+from model_egnn.egnn_deforming_plate import EGNN_DefPlate
 from torch.optim.lr_scheduler import ExponentialLR
 import time
 from typing import List, Tuple
@@ -15,7 +15,6 @@ from helpers.evaluation_helper import run_final_evaluation
 from helpers.helpers import (format_training_time, create_model_hyperparams, load_config, load_trajectories_preprocessed,
                              print_training_config, setup_paths, get_feature_indices, get_device, print_overfit_samples,
                              move_any_to_device)
-# from torch.cuda.amp import autocast, GradScaler
 from torch.amp import autocast, GradScaler
 
 # Constants
@@ -37,7 +36,7 @@ class TrainingHistory:
     grad_norms: List[float]
 
     @classmethod
-    def create_empty(cls):
+    def create_empty(cls) -> 'TrainingHistory':
         return cls([], [], [], [], [], [], [])
 
 def _create_standard_dataloaders(dataset, batch_size, shuffle, num_workers, pin_memory):
@@ -92,10 +91,8 @@ def _create_overfit_dataloader(dataset, overfit_traj_id, overfit_time_idx_list):
             overfit_indices.append(idx)
 
     if len(overfit_indices) == 0:
-        raise ValueError(
-            f"No samples found matching overfit criteria: "
-            f"traj_id={overfit_traj_id}, time_idx={overfit_time_idx_list}"
-        )
+        raise ValueError(f"No samples found matching overfit criteria: "
+                         f"traj_id={overfit_traj_id}, time_idx={overfit_time_idx_list}")
 
     overfit_set = Subset(dataset, overfit_indices)
     loader = DataLoader(overfit_set, batch_size=len(overfit_indices), shuffle=False, collate_fn=collate_unet)
@@ -227,6 +224,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
                      move_all_to_device):
     """
     Run one training epoch. Returns (avg_loss, avg_vel_loss, avg_stress_loss, avg_grad_norm).
+
     Args:
         model: torch.nn.Module
         train_loader: DataLoader
@@ -262,13 +260,17 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
 
         if device.type == 'cuda':
             with autocast(device_type=device.type, enabled=amp_enabled):
-                preds_list = model(adj_mat_list, feat_t_mat_list)
-                batch_loss, vel_loss, stress_loss = compute_loss(adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
-                                                                 velocity_idxs, stress_idxs)
+                preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+                batch_loss, vel_loss, stress_loss = compute_loss(
+                    adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
+                    velocity_idxs, stress_idxs
+                )
         else:
             preds_list = model(adj_mat_list, feat_t_mat_list)
-            batch_loss, vel_loss, stress_loss = compute_loss(adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
-                                                             velocity_idxs, stress_idxs)
+            batch_loss, vel_loss, stress_loss = compute_loss(
+                adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
+                velocity_idxs, stress_idxs
+            )
 
         if amp_enabled and scaler is not None:
             scaler.scale(batch_loss).backward()
@@ -291,18 +293,22 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
     avg_grad_norm = total_grad_norm / n
     return total_loss.item() / n, total_vel_loss.item() / n, total_stress_loss.item() / n, avg_grad_norm
 
-def train_gunet(device, num_workers, pin_memory):
+def train_egnn(device, num_workers, pin_memory, config_path=None):
     """Training loop"""
-    # Load configuration from YAML
-    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
+
+    if config_path is None:
+        config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
+
     # Extract model and training parameters
     model_cfg = config['model']
     train_cfg = config['training']
-    # Load train config
-    # datapath: processed_data/data_standard_True so add preprocessed_train.pt
+    
+    base_dir = os.path.dirname(os.path.dirname(__file__))
+    datapath = os.path.join(base_dir, train_cfg['datapath'])
+    
     checkpoint_path, plots_dir = setup_paths(train_cfg)
-    dataconfig = load_config(train_cfg['datapath'] + '/used_dataconfig.yaml')
+    dataconfig = load_config(os.path.join(datapath, 'used_dataconfig.yaml'))
     include_mesh_pos = dataconfig['include_mesh_pos']
     feat_idx = get_feature_indices(include_mesh_pos)
     torch.manual_seed(train_cfg['random_seed'])
@@ -312,17 +318,17 @@ def train_gunet(device, num_workers, pin_memory):
     print("\n=================================================")
     print(" LOADING PREPROCESSED DATA")
     print("=================================================\n")
-    print(f"\t Preprocessed data: {train_cfg['datapath']}")
+    print(f"\t Preprocessed data: {datapath}")
 
     # Load preprocessed trajectories
-    if not os.path.exists(train_cfg['datapath']):
+    if not os.path.exists(datapath):
         raise FileNotFoundError(
-            f"Preprocessed data not found at {train_cfg['datapath']}\n"
+            f"Preprocessed data not found at {datapath}\n"
             f"Please run 'python preprocess_data.py' first to generate the preprocessed data."
         )
 
     list_of_trajs = load_trajectories_preprocessed(
-        train_cfg['datapath'] + "/preprocessed_train.pt", train_cfg['num_train_trajs']
+        os.path.join(datapath, "preprocessed_train.pt"), train_cfg['num_train_trajs']
     )
     if move_all_to_device:
         if device.type == "cuda":
@@ -338,11 +344,10 @@ def train_gunet(device, num_workers, pin_memory):
             print(f"[train] CUDA free/total after dataset move:  {free / 1024 ** 3:.2f} / {total / 1024 ** 3:.2f} GB")
 
     if move_all_to_device:
-        # IMPORTANT: GPU-resident dataset + multi-worker dataloader is a footgun.
         if num_workers != 0:
             print("[train] move_all_to_device=True -> forcing num_workers=0")
         num_workers = 0
-        pin_memory = False  # irrelevant / sometimes harmful here
+        pin_memory = False  
 
     # Build dataset from these trajectories
     dataset = DefPlateDataset(list_of_trajs, world_pos_idxs=feat_idx.world_pos, velocity_idxs=feat_idx.velocity)
@@ -359,15 +364,11 @@ def train_gunet(device, num_workers, pin_memory):
 
     # Build model and optimizer
     model_hyperparams = create_model_hyperparams(model_cfg)
-    model = (GraphUNet_DefPlate(feat_idx.dim_in, DIM_OUT_VEL, DIM_OUT_STRESS, model_hyperparams, model_cfg['adj_norm'])
+    model = (EGNN_DefPlate(feat_idx.dim_in, DIM_OUT_VEL, DIM_OUT_STRESS, model_hyperparams, model_cfg['adj_norm'])
              .to(device))
 
-    optimizer = optim.Adam(
-        model.parameters(),
-        lr=train_cfg['lr'],
-        weight_decay=train_cfg['adam_weight_decay'],
-        fused=(device.type == "cuda")
-    )
+    optimizer = optim.Adam(model.parameters(), lr=train_cfg['lr'], weight_decay=train_cfg['adam_weight_decay'],
+        fused=(device.type == "cuda"))
     scheduler = ExponentialLR(optimizer, gamma=train_cfg['gamma_lr_scheduler'])
     amp_enabled = bool(train_cfg.get('amp'))
     scaler = GradScaler(enabled=amp_enabled)
@@ -398,8 +399,10 @@ def train_gunet(device, num_workers, pin_memory):
 
         scheduler.step()
 
-        tqdm.write(f"[Train] [Epoch {epoch:03d}] Train Loss: {train_loss:.6f} | Test Loss: {val_loss:.6f} | "
-            f"Vel Loss: {train_vel:.6f} | Stress Loss: {train_stress:.6f} | LR: {optimizer.param_groups[0]['lr']:.6f}")
+        tqdm.write(f"[Train] [Epoch {epoch:03d}] "
+            f"Train Loss: {train_loss:.6f} | Test Loss: {val_loss:.6f} | "
+            f"Vel Loss: {train_vel:.6f} | Stress Loss: {train_stress:.6f} | "
+            f"LR: {optimizer.param_groups[0]['lr']:.6f}")
 
     # Finish up
     total_time = time.time() - start_time
@@ -413,10 +416,19 @@ def train_gunet(device, num_workers, pin_memory):
     return model, test_loader, history, feat_idx, plots_dir
 
 if __name__ == "__main__":
-    cuda = False
-    num_workers = 0
-    pin_memory = False
-    device = get_device(cuda)
+    import argparse
+    parser = argparse.ArgumentParser(description='Train EGNN model')
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to config YAML file (default: config.yaml)')
+    parser.add_argument('--cuda', action='store_true', default=False,
+                        help='Use CUDA if available')
+    parser.add_argument('--num-workers', type=int, default=4,
+                        help='Number of data loading workers (default: 4)')
+    parser.add_argument('--pin-memory', action='store_true', default=True,
+                        help='Pin memory for faster GPU transfer (default: True)')
+    args = parser.parse_args()
+    
+    device = get_device(args.cuda)
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     # PyTorch 2.x:
@@ -424,6 +436,8 @@ if __name__ == "__main__":
         torch.set_float32_matmul_precision("high")
     except Exception:
         pass
-    model, test_loader, history, feat_idx, plots_dir = train_gunet(device, num_workers, pin_memory)
+    
+    config_file = args.config if args.config else os.path.join(os.path.dirname(__file__), "config.yaml")
+    model, test_loader, history, feat_idx, plots_dir = train_egnn(device, args.num_workers, args.pin_memory, config_path=config_file)
     run_final_evaluation(model, test_loader, device, history, feat_idx.velocity, feat_idx.stress, plots_dir,
-                         config_path=os.path.join(os.path.dirname(__file__), "config.yaml"))
+                         config_path=config_file)

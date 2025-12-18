@@ -10,8 +10,6 @@ def _preprocess_and_save(dataconfig):
 
     Args:
         dataconfig
-
-    :return:
     """
     tfrecord_path = dataconfig['tfrecord_path']
     max_trajs = dataconfig['max_trajs']
@@ -26,9 +24,7 @@ def _preprocess_and_save(dataconfig):
     print(f"  Max trajectories: {max_trajs if max_trajs else 'All'}")
     print(f"  Output directory: {output_dir}\n")
 
-    # Load and preprocess all trajectories
-    # Note: Trajectories are loaded in deterministic sequential order from TFRecord
-    # and will be saved maintaining this order (traj_id 0, 1, 2, ...)
+    # Load and preprocess all trajectories. Trajectories are loaded in sequential order.
     list_of_trajs = load_all_trajectories(dataconfig)
 
     # Create output directory if it doesn't exist
@@ -80,9 +76,7 @@ def main(dataconfig):
     Access point function to generate data
 
     Args:
-        dataconfig
-
-    :return: nothing
+        dataconfig: config.yaml
     """
     _preprocess_and_save(dataconfig)
 
