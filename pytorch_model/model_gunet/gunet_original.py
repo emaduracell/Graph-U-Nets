@@ -12,7 +12,7 @@ class GraphUnet(nn.Module):
     self.ks:
         pooling ratios
     self.bottom_gcn:
-        bottom GCN (between end of pooling and start of unpoolin)
+        bottom GCN (between end of pooling and start of unpooling)
     self.down_gcns:
         GCNs in the encoding layers
     self.up_gcns:

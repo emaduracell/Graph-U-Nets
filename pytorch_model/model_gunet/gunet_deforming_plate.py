@@ -184,10 +184,10 @@ class GraphUNet_DefPlate(nn.Module):
         """
         # NOTE: adjacency normalization is performed during preprocessing in data_builder.py
         # Initial GCN
-        h0 = self.start_gcn(g, h)  # [N, l_dim]
-        # Graph U-Net: multi-scale node embeddings
-        hs = self.g_unet(g, h0)  # list of [N, l_dim]
-        # Use final decoder output (full resolution) as node embeddings
+        h0 = self.start_gcn(g, h)
+        # Graph U-Net
+        hs = self.g_unet(g, h0)
+        # Use final decoder output as node embeddings
         h_nodes = hs[-1]  # [N, l_dim]
         # Apply separate prediction heads
         vel_pred = self.velocity_mlp(h_nodes)

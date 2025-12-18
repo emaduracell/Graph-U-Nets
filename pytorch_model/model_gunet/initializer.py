@@ -3,7 +3,7 @@ import numpy as np
 
 class Initializer(object):
     """
-    Class that initializes.
+    Class that initializes weights of the model.
     """
 
     @classmethod

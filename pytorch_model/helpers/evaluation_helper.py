@@ -16,18 +16,16 @@ def _collect_evaluation_data(preds_list, targets, node_types_gpu, means, stds, v
     Collect denormalized and normalized prediction data.
 
     Args:
-        preds_list:
-        targets:
-        node_types_gpu:
-        means:
-        stds:
-        velocity_idxs:
-        stress_idxs:
-        device:
-        denorm_data:
-        norm_data:
-
-    :return:
+        preds_list: List of tensors containing the model predictions for the current batch.
+        targets: List of tensors containing the ground truth target values.
+        node_types_gpu: List of tensors indicating the node types, moved to the device.
+        means: List of mean values used for data normalization.
+        stds: List of standard deviation values used for data normalization.
+        velocity_idxs: Slice or indices identifying velocity components in the data.
+        stress_idxs: Slice or indices identifying stress components in the data.
+        device: The computation device (CPU or GPU) to be used.
+        denorm_data: Dictionary to accumulate the denormalized velocity and stress data.
+        norm_data: Dictionary to accumulate the normalized velocity and stress data.
     """
     for pred, target, nodetype, mean, std in zip(preds_list, targets, node_types_gpu, means, stds):
         mean = mean.to(device).squeeze()
@@ -57,7 +55,7 @@ def _collect_evaluation_data(preds_list, targets, node_types_gpu, means, stds, v
         norm_data['stress_targets'].append(target[:, stress_idxs][eval_mask].cpu().numpy())
 
 
-def _prepare_plot_data(data: dict):
+def _prepare_plot_data(data):
     """Prepare concatenated data lists for plotting."""
 
     def concat_or_empty(preds_list, targets_list, dim):
@@ -80,15 +78,14 @@ def run_final_evaluation(model, test_loader, device, history, velocity_idxs, str
     Run evaluation and generate final plots.
 
     Args:
-        model: torch.nn.Module
-        test_loader:
-        device: torch.device
-        history:
-        velocity_idxs: slice
-        stress_idxs: slice
-        plots_dir: str
-
-    :return:
+        model: torch.nn.Module, the trained model to be evaluated.
+        test_loader: DataLoader containing the test dataset batches.
+        device: torch.device, the computation device to use.
+        history: Object containing training metrics (losses, gradients) for visualization.
+        velocity_idxs: slice, indices to extract velocity features.
+        stress_idxs: slice, indices to extract stress features.
+        plots_dir: str, directory path where plots will be saved.
+        config_path: str, path to the configuration file used.
     """
     print("[train] Generating final evaluation plots...")
 

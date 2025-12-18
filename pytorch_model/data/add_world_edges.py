@@ -104,6 +104,15 @@ def add_w_edges_radius(base_A, node_types, pos_t, radius):
 
 
 def add_w_edges(self, base_A, node_types, pos_t):
+    """
+    Wrapper function that implements the various methods of adding world edges, or none of them
+
+    Args:
+        self:
+        base_A:
+        node_types:
+        pos_t:
+    """
     # Add world edges
     if self.add_world_edges == "radius":
         A_dynamic, dynamic_edges = add_w_edges_radius(base_A=base_A, node_types=node_types, pos_t=pos_t,

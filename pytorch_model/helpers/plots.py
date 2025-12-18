@@ -7,7 +7,13 @@ from helpers.helpers import load_config
 
 
 def _flatten_dict(d, parent_key=""):
-    """Helper: flatten config dicts."""
+    """
+    Helper: flatten config dicts.
+
+    Args:
+        d: dict
+        parent_key:
+    """
     items = []
     for k, v in d.items():
         new_key = f"{parent_key}.{k}" if parent_key else str(k)
@@ -19,7 +25,11 @@ def _flatten_dict(d, parent_key=""):
 
 
 def _add_cfg_footer(model_cfg, train_cfg):
-    """Add a small text block with model_cfg and train_cfg at the bottom."""
+    """
+    Args:
+        model_cfg: model config.yaml
+        train_cfg: train config.yaml
+    """
     flat_model = _flatten_dict(model_cfg, "model")
     flat_train = _flatten_dict(train_cfg, "train")
     footer_items = list(flat_model.items()) + list(flat_train.items())
@@ -33,7 +43,14 @@ def _add_cfg_footer(model_cfg, train_cfg):
 
 
 def to_cpu_numpy(x):
-    """Convert Torch tensors/lists to NumPy array on CPU."""
+    """
+    Convert Torch tensors/lists to NumPy array on CPU.
+
+    Args:
+        x: torch tensor/list
+
+    :return: numpy array
+    """
     if isinstance(x, torch.Tensor):
         return x.detach().cpu().numpy()
     if isinstance(x, (list, tuple)):
@@ -51,11 +68,18 @@ def to_cpu_numpy(x):
     return np.asarray(x)
 
 
-# ------------------------------------------------------------------------------
-# INDIVIDUAL PLOTTING FUNCTIONS
-# ------------------------------------------------------------------------------
-
 def plot_loss_curves(save_dir, epochs, train_losses, val_losses, model_cfg, train_cfg):
+    """
+    Plot loss
+
+    Args:
+        save_dir:
+        epochs:
+        train_losses:
+        val_losses:
+        model_cfg:
+        train_cfg:
+    """
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, train_losses, label='Train Loss')
     plt.plot(epochs, val_losses, label='Val Loss')
@@ -70,6 +94,18 @@ def plot_loss_curves(save_dir, epochs, train_losses, val_losses, model_cfg, trai
 
 
 def plot_component_losses(save_dir, epochs, train_stress, train_vel, test_stress, test_vel, model_cfg, train_cfg):
+    """
+
+    Args:
+        save_dir:
+        epochs:
+        train_stress:
+        train_vel:
+        test_stress:
+        test_vel:
+        model_cfg:
+        train_cfg:
+    """
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, train_stress, label='Train stress loss')
     plt.plot(epochs, train_vel, label='Train velocity loss')
@@ -86,6 +122,16 @@ def plot_component_losses(save_dir, epochs, train_stress, train_vel, test_stress
 
 
 def plot_grad_norms(save_dir, epochs, grad_norms, model_cfg, train_cfg):
+    """
+
+    Args:
+        save_dir:
+        epochs:
+        grad_norms:
+        model_cfg:
+        train_cfg:
+    :return:
+    """
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, grad_norms, label='Gradient Norm')
     plt.xlabel('Epoch')
@@ -99,6 +145,14 @@ def plot_grad_norms(save_dir, epochs, grad_norms, model_cfg, train_cfg):
 
 
 def plot_weights(save_dir, model, model_cfg, train_cfg):
+    """
+
+    Args:
+        save_dir:
+        model:
+        model_cfg:
+        train_cfg:
+    """
     weights_dir = os.path.join(save_dir, 'weights')
     os.makedirs(weights_dir, exist_ok=True)
     for name, param in model.named_parameters():
@@ -115,6 +169,14 @@ def plot_weights(save_dir, model, model_cfg, train_cfg):
 
 
 def plot_activations(save_dir, activations, model_cfg, train_cfg):
+    """
+
+    Args:
+        save_dir:
+        activations:
+        model_cfg:
+        train_cfg:
+    """
     acts_dir = os.path.join(save_dir, 'activations')
     os.makedirs(acts_dir, exist_ok=True)
     for name, acts in activations.items():
@@ -132,6 +194,16 @@ def plot_pred_vs_true(save_dir, feature_labels, iter_targets, iter_predictions, 
                       folder_name="pred_vs_true", suffix=""):
     """
     Generic Scatter plot function.
+
+    Args:
+        save_dir:
+        feature_labels:
+        iter_targets:
+        iter_predictions:
+        model_cfg:
+        train_cfg:
+        folder_name:
+        suffix:
     """
     pred_dir = os.path.join(save_dir, folder_name)
     os.makedirs(pred_dir, exist_ok=True)
@@ -171,7 +243,16 @@ def plot_pred_vs_true(save_dir, feature_labels, iter_targets, iter_predictions, 
 def plot_residuals(save_dir, feature_labels, iter_targets, iter_predictions, model_cfg, train_cfg,
                    folder_name="residuals", suffix=""):
     """
-    Generic Residual plot function.
+
+    Args:
+        save_dir:
+        feature_labels:
+        iter_targets:
+        iter_predictions:
+        model_cfg:
+        train_cfg:
+        folder_name:
+        suffix:
     """
     res_dir = os.path.join(save_dir, folder_name)
     os.makedirs(res_dir, exist_ok=True)
@@ -202,16 +283,33 @@ def plot_residuals(save_dir, feature_labels, iter_targets, iter_predictions, mod
         plt.close()
 
 
-# ------------------------------------------------------------------------------
-# MAIN PLOTTING FUNCTION
-# ------------------------------------------------------------------------------
-
-def make_final_plots(save_dir, train_losses, val_losses, grad_norms, model,
-                     activations, predictions, targets,  # Denormalized
-                     predictions_norm, targets_norm,  # Normalized
-                     train_vel_losses, train_stress_losses, test_vel_losses,
+def make_final_plots(save_dir, train_losses, val_losses, grad_norms, model, activations, predictions, targets,
+                     predictions_norm, targets_norm, train_vel_losses, train_stress_losses, test_vel_losses,
                      test_stress_losses, velocity_idxs, stress_idxs, config_path):
-    # 1. Prepare Data (Convert to CPU Numpy)
+    """
+
+
+    Args:
+        save_dir:
+        train_losses:
+        val_losses:
+        grad_norms:
+        model:
+        activations:
+        predictions:
+        targets:
+        predictions_norm:
+        targets_norm:
+        train_vel_losses:
+        train_stress_losses:
+        test_vel_losses:
+        test_stress_losses:
+        velocity_idxs:
+        stress_idxs:
+        config_path:
+    """
+
+    # Prepare Data (Convert to CPU Numpy)
     train_losses = to_cpu_numpy(train_losses)
     val_losses = to_cpu_numpy(val_losses)
     grad_norms = to_cpu_numpy(grad_norms)
@@ -261,12 +359,6 @@ def make_final_plots(save_dir, train_losses, val_losses, grad_norms, model,
     print("Plotting Gradients...")
     plot_grad_norms(save_dir, epochs, grad_norms, model_cfg, train_cfg)
 
-    # print("Plotting Weights...")
-    # plot_weights(save_dir, model, model_cfg, train_cfg)
-    #
-    # print("Plotting Activations...")
-    # plot_activations(save_dir, activations, model_cfg, train_cfg)
-
     print("Plotting Predictions vs True (Normalized)...")
     plot_pred_vs_true(save_dir, feature_labels, iter_targets_norm, iter_predictions_norm, model_cfg, train_cfg,
                       folder_name="pred_vs_true", suffix="(Normalized)")
@@ -275,7 +367,7 @@ def make_final_plots(save_dir, train_losses, val_losses, grad_norms, model,
     plot_residuals(save_dir, feature_labels, iter_targets, iter_predictions, model_cfg, train_cfg,
                    folder_name="residuals", suffix="(Denorm)")
 
-    # --- Plot Normalized ---
+    # Plot normalized
     print("Plotting Residuals (Normalized)...")
     plot_residuals(save_dir, feature_labels, iter_targets_norm, iter_predictions_norm, model_cfg, train_cfg,
                    folder_name="residuals_norm", suffix="(Normalized)")

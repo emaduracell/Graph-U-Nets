@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, Subset
 import os
 import numpy as np
 from data.defplate_dataset import DefPlateDataset, collate_unet
-from model.gunet_deforming_plate import GraphUNet_DefPlate
+from model_gunet.gunet_deforming_plate import GraphUNet_DefPlate
 from torch.optim.lr_scheduler import ExponentialLR
 import time
 from typing import List, Tuple
@@ -160,10 +160,10 @@ def _compute_single_graph_loss(pred, target, nodetype, velocity_idxs,
     stress_loss = 0.0
 
     if vel_mask.any():
-        vel_loss = F.huber_loss(pred_vel[vel_mask], target_vel[vel_mask])
+        vel_loss = F.mse_loss(pred_vel[vel_mask], target_vel[vel_mask])
 
     if stress_mask.any():
-        stress_loss = F.huber_loss(pred_stress[stress_mask], target_stress[stress_mask])
+        stress_loss = F.mse_loss(pred_stress[stress_mask], target_stress[stress_mask])
 
     return vel_loss, stress_loss
 

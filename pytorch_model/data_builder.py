@@ -7,7 +7,7 @@ from helpers.helpers import get_feature_indices, load_config
 from helpers.helpers import print_debug_nodetype, print_debug_shapes_dataloader
 from data.decode_tfrecord_utils import cast_trajectory_from_record
 from data.add_world_edges import add_w_edges
-from model.helpers_models import get_adj_norm_fn
+from model_gunet.helpers_models import get_adj_norm_fn
 from types import SimpleNamespace
 import time
 
@@ -247,10 +247,11 @@ def compute_row_normalization(list_of_trajs, mean, element_num):
         element_num: int
             Total number of elements
 
-    :return mean: torch.Tensor
-        The original component-wise mean
-    :return std_dev: torch.Tensor
-        Component-wise standard deviation
+    :return (mean, stdev)
+        mean: torch.Tensor
+            The original component-wise mean
+        std_dev: torch.Tensor
+            Component-wise standard deviation
     """
     std_acc = torch.zeros_like(mean)
 
@@ -265,9 +266,7 @@ def compute_row_normalization(list_of_trajs, mean, element_num):
     # Calculate standard deviation
     std_dev = torch.sqrt(std_acc / (element_num - 1))
 
-    # Stability check: If a feature is constant (e.g., specific node types or 2D constraints),
-    # std_dev will be 0. We set it to 1.0 to avoid NaN during division.
-    # This effectively makes the normalization X - mean for those features.
+    # If a feature is constant (e.g., specific node types or 2D constraints), we avoid division by 0
     std_dev[std_dev < 1e-8] = 1.0
 
     return mean, std_dev
@@ -331,7 +330,6 @@ def process_single_trajectory(traj, include_mesh_pos, norm_method, idx, add_worl
     vel_normal = build_velocity(world_pos, mode="normal")
     vel_actuator_tp1 = build_velocity(world_pos, mode="actuator")
     actuator_mask = (node_type == SPHERE_NODE).reshape(-1)  # Shape (N,)
-    # print(f"[process_single_trajectory] actuator_mask={actuator_mask}")
     vel_normal[:, actuator_mask, :] = vel_actuator_tp1[:, actuator_mask, :]
 
     # One hot node type

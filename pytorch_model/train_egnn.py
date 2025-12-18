@@ -91,10 +91,8 @@ def _create_overfit_dataloader(dataset, overfit_traj_id, overfit_time_idx_list):
             overfit_indices.append(idx)
 
     if len(overfit_indices) == 0:
-        raise ValueError(
-            f"No samples found matching overfit criteria: "
-            f"traj_id={overfit_traj_id}, time_idx={overfit_time_idx_list}"
-        )
+        raise ValueError(f"No samples found matching overfit criteria: "
+                         f"traj_id={overfit_traj_id}, time_idx={overfit_time_idx_list}")
 
     overfit_set = Subset(dataset, overfit_indices)
     loader = DataLoader(overfit_set, batch_size=len(overfit_indices), shuffle=False, collate_fn=collate_unet)
@@ -226,6 +224,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
                      move_all_to_device):
     """
     Run one training epoch. Returns (avg_loss, avg_vel_loss, avg_stress_loss, avg_grad_norm).
+
     Args:
         model: torch.nn.Module
         train_loader: DataLoader
@@ -368,12 +367,8 @@ def train_egnn(device, num_workers, pin_memory, config_path=None):
     model = (EGNN_DefPlate(feat_idx.dim_in, DIM_OUT_VEL, DIM_OUT_STRESS, model_hyperparams, model_cfg['adj_norm'])
              .to(device))
 
-    optimizer = optim.Adam(
-        model.parameters(),
-        lr=train_cfg['lr'],
-        weight_decay=train_cfg['adam_weight_decay'],
-        fused=(device.type == "cuda")
-    )
+    optimizer = optim.Adam(model.parameters(), lr=train_cfg['lr'], weight_decay=train_cfg['adam_weight_decay'],
+        fused=(device.type == "cuda"))
     scheduler = ExponentialLR(optimizer, gamma=train_cfg['gamma_lr_scheduler'])
     amp_enabled = bool(train_cfg.get('amp'))
     scaler = GradScaler(enabled=amp_enabled)

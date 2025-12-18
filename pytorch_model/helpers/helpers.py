@@ -2,8 +2,6 @@ import yaml
 import torch
 from dataclasses import dataclass
 import os
-from typing import List, Tuple, Optional
-import numpy as np
 
 @dataclass
 class FeatureIndices:
@@ -27,18 +25,6 @@ def format_training_time(seconds):
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
     return f"{hours}h {minutes}m {secs}s"
-
-# def setup_paths(train_cfg):
-#     """Set up checkpoint and plots directory paths."""
-#     preprocessed_data_path = train_cfg['datapath'] + "/preprocessed_train.pt"
-#     dataconfig = load_config(train_cfg['datapath'] + "/used_dataconfig.yaml")
-#     base_name = preprocessed_data_path.rsplit("/", 1)[0]
-#
-#     checkpoint_path = f"{train_cfg['model_path_out']}model_{base_name}/"
-#     plots_dir = os.path.join(f"{train_cfg['model_path_out']}model_{base_name}", "plots")
-#     return checkpoint_path, plots_dir
-
-import os
 
 def setup_paths(train_cfg):
     """
@@ -93,7 +79,7 @@ def print_training_config(train_cfg, train_loader):
     print(f"Number of trajectories: {train_cfg['num_train_trajs']}")
     print(f"Train loader batches: {len(train_loader)}\n")
 
-def get_device(cuda: bool):
+def get_device(cuda):
     """Determine the best available device."""
     if cuda:
         if torch.cuda.is_available():
@@ -121,7 +107,7 @@ def get_device(cuda: bool):
             print(f"[get_device] Using device: {dev}")
     return dev
 
-def get_device_pyg(cuda: bool):
+def get_device_pyg(cuda):
     """
     Determine the best available device.
     """
@@ -161,7 +147,14 @@ def get_feature_indices(include_mesh_pos):
 
 
 def load_trajectories_preprocessed(data_path, num_train_trajs):
-    """Load preprocessed trajectories from disk."""
+    """
+    Load preprocessed trajectories from disk.
+
+    Args:
+        data_path:
+        num_train_trajs:
+    :return:
+    """
     if not os.path.exists(data_path):
         raise FileNotFoundError(
             f"Preprocessed data not found at {data_path}\n"
@@ -189,6 +182,19 @@ def print_overfit_samples(loader):
 
 
 def print_debug_shapes_dataloader(node_type, idx, mesh_pos, traj, include_mesh_pos, mesh_cells, stress, world_pos):
+    """
+
+    Args:
+        node_type:
+        idx:
+        mesh_pos:
+        traj:
+        include_mesh_pos:
+        mesh_cells:
+        stress:
+        world_pos:
+    """
+
     if idx == 0 or idx == 1 or idx == 2:
         print(f"traj: \n \t type(traj) = {type(traj)}, len={len(traj)}")
         if include_mesh_pos:
@@ -216,6 +222,11 @@ def print_debug_shapes_dataloader(node_type, idx, mesh_pos, traj, include_mesh_p
         idx += 1
 
 def print_debug_nodetype(idx, node_type):
+    """
+    Args:
+        idx:
+        node_type:
+    """
     # Debug
     if idx == 1 or idx == 2:
         print(
@@ -224,6 +235,10 @@ def print_debug_nodetype(idx, node_type):
             f"\n \t len(node_type[0])={len(node_type[0])}")
 
 def tensor_bytes(x):
+    """
+    Args:
+        x:
+    """
     if torch.is_tensor(x):
         return x.nelement() * x.element_size()
     if isinstance(x, dict):
@@ -240,7 +255,8 @@ def move_any_to_device(obj, device, non_blocking):
         obj:
         device: torch.device
         non_blocking: bool
-    :return:
+            parameter set to True to avoid making training slower
+    :return: object to device
     """
     if torch.is_tensor(obj):
         if obj.device == device:

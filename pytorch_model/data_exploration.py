@@ -13,6 +13,11 @@ SPHERE_NODE = 1
 def make_dynamic_edges_trace(coords, edge_index):
     """
     Creates Red Lines for the dynamic interactions (world edges).
+
+    Args:
+        coords:
+        edge_index:
+    :return Scatter3d
     """
     if edge_index is None:
         return go.Scatter3d()
@@ -36,18 +41,28 @@ def make_dynamic_edges_trace(coords, edge_index):
     for dim, lines_list in enumerate([x_lines, y_lines, z_lines]):
         c_src = coords[src, dim]
         c_dst = coords[dst, dim]
-        # Stack: [E, 3] where cols are src, dst, None
+        # Stack
         stacked = np.stack([c_src, c_dst, nan_vec], axis=1).flatten()
         lines_list.extend(stacked)
 
-    return go.Scatter3d(x=x_lines, y=y_lines, z=z_lines, mode='lines',
-                        line=dict(color='red', width=4),
+    return go.Scatter3d(x=x_lines, y=y_lines, z=z_lines, mode='lines', line=dict(color='red', width=4),
                         name='World Edges (Ground Truth)')
 
 
 def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     """
     Creates a Scatter3d trace that draws the edges of the triangles.
+
+    Args:
+        x:
+        y:
+        z:
+        i:
+        j:
+        k:
+        color:
+        width:
+    :return: Scatter3d trace
     """
     tri_points = np.vstack([
         i, j, k, i,
@@ -62,19 +77,20 @@ def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     ye[4::5] = None
     ze[4::5] = None
 
-    return go.Scatter3d(
-        x=xe, y=ye, z=ze,
-        mode='lines',
-        line=dict(color=color, width=width),
-        name='Wireframe',
-        showlegend=False,
-        hoverinfo='skip'
-    )
+    return go.Scatter3d(x=xe, y=ye, z=ze, mode='lines', line=dict(color=color, width=width), name='Wireframe',
+                        showlegend=False, hoverinfo='skip')
 
 
 def print_dataset_statistics(metadata_path, world_pos_idxs, vel_idxs, stress_idxs, mesh_pos_idxs=None):
     """
     Loads and prints the statistics calculated by data_loader and saved by main_data.
+
+    Args:
+        metadata_path:
+        world_pos_idxs:
+        vel_idxs:
+        stress_idxs:
+        mesh_pos_idxs:
     """
     print("\n" + "=" * 60)
     print(" DATASET STATISTICS (Calculated by Data Loader)")
@@ -86,7 +102,7 @@ def print_dataset_statistics(metadata_path, world_pos_idxs, vel_idxs, stress_idx
 
     meta = torch.load(metadata_path)
 
-    # Extract mean and std (Shapes are typically [1, 1, F])
+    # Extract mean and std
     mean_vec = meta['mean'].squeeze()
     std_vec = meta['std'].squeeze()
 
@@ -101,23 +117,23 @@ def print_dataset_statistics(metadata_path, world_pos_idxs, vel_idxs, stress_idx
     def fmt(vec):
         return f"[{', '.join([f'{x:.4f}' for x in vec])}]"
 
-    # 1. World Position
+    # World Position
     w_mean = mean_vec[world_pos_idxs]
     w_std = std_vec[world_pos_idxs]
     print(f"{'World Pos (X,Y,Z)':<20} | {fmt(w_mean):<25} | {fmt(w_std):<25}")
 
-    # 2. Mesh Position (if applicable)
+    # Mesh Position (if applicable)
     if mesh_pos_idxs is not None:
         m_mean = mean_vec[mesh_pos_idxs]
         m_std = std_vec[mesh_pos_idxs]
         print(f"{'Mesh Pos (X,Y,Z)':<20} | {fmt(m_mean):<25} | {fmt(m_std):<25}")
 
-    # 3. Velocity
+    # Velocity
     v_mean = mean_vec[vel_idxs]
     v_std = std_vec[vel_idxs]
     print(f"{'Velocity (Vx,Vy,Vz)':<20} | {fmt(v_mean):<25} | {fmt(v_std):<25}")
 
-    # 4. Stress
+    # Stress
     s_mean = mean_vec[stress_idxs]
     s_std = std_vec[stress_idxs]
     print(f"{'Stress (Von Mises)':<20} | {fmt(s_mean):<25} | {fmt(s_std):<25}")
@@ -131,6 +147,15 @@ def print_dataset_statistics(metadata_path, world_pos_idxs, vel_idxs, stress_idx
 def visualize_ground_truth(pos, cells, stress, node_type, title, color_mode="stress", dynamic_edges=None):
     """
     Visualizes a single state of the ground truth data.
+
+    Args:
+        pos:
+        cells:
+        stress:
+        node_type:
+        title:
+        color_mode:
+        dynamic_edges:
     """
     # Triangulation logic
     tri_i, tri_j, tri_k = [], [], []
@@ -153,7 +178,7 @@ def visualize_ground_truth(pos, cells, stress, node_type, title, color_mode="str
 
     fig = go.Figure()
 
-    # 1. Surface Mesh
+    # Surface Mesh
     fig.add_trace(go.Mesh3d(
         x=pos[:, 0], y=pos[:, 1], z=pos[:, 2],
         i=tri_i, j=tri_j, k=tri_k,
@@ -166,39 +191,24 @@ def visualize_ground_truth(pos, cells, stress, node_type, title, color_mode="str
         name="Surface"
     ))
 
-    # 2. Wireframe
-    fig.add_trace(make_wireframe(
-        pos[:, 0], pos[:, 1], pos[:, 2],
-        np.array(tri_i), np.array(tri_j), np.array(tri_k)
-    ))
+    # Wireframe
+    fig.add_trace(make_wireframe(pos[:, 0], pos[:, 1], pos[:, 2], np.array(tri_i), np.array(tri_j), np.array(tri_k)))
 
     # Give the right side more room for the colorbar
     fig.update_layout(margin=dict(l=0, r=160, t=60, b=0))
 
     # Move legend away from the colorbar (e.g., top-left)
-    fig.update_layout(
-        legend=dict(
-            x=0.01, y=0.99,
-            xanchor="left", yanchor="top",
-            bgcolor="rgba(255,255,255,0.6)"
-        )
-    )
+    fig.update_layout(legend=dict(x=0.01, y=0.99, xanchor="left", yanchor="top", bgcolor="rgba(255,255,255,0.6)"))
 
     # Push the mesh colorbar further right
-    fig.update_traces(
-        selector=dict(type="mesh3d"),
-        colorbar=dict(x=1.08)  # try 1.05–1.15
-    )
+    fig.update_traces(selector=dict(type="mesh3d"), colorbar=dict(x=1.08) )
 
-    # 3. Dynamic Edges (World Edges)
+    # Dynamic Edges (World Edges)
     if dynamic_edges is not None:
         fig.add_trace(make_dynamic_edges_trace(pos, dynamic_edges))
 
     fig.update_scenes(aspectmode="data")
-    fig.update_layout(
-        height=700, width=900,
-        title_text=title,
-        scene=dict(
+    fig.update_layout(height=700, width=900, title_text=title, scene=dict(
             xaxis_title="X", yaxis_title="Y", zaxis_title="Z"
         )
     )
@@ -208,6 +218,13 @@ def visualize_ground_truth(pos, cells, stress, node_type, title, color_mode="str
 def apply_filter_mask(pos, stress, node_type, cells, render_mode):
     """
     Filters nodes based on render_mode (e.g., hiding borders).
+
+    Args:
+        pos:
+        stress:
+        node_type:
+        cells:
+        render_mode:
     """
     mode = render_mode.lower()
     if mode == "all":
@@ -236,6 +253,17 @@ def apply_filter_mask(pos, stress, node_type, cells, render_mode):
 
 
 def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_world_edges, include_mesh_pos):
+    """
+    Args:
+        render_mode:
+        traj_idx:
+        t_step:
+        preprocessed_path:
+        metadata_path:
+        add_world_edges:
+        include_mesh_pos:
+    """
+
     if include_mesh_pos:
         mesh_pos_idxs = slice(0, 3)
         world_pos_idxs = slice(3, 6)
@@ -249,10 +277,10 @@ def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_wo
         vel_idxs = slice(5, 8)
         stress_idxs = slice(8, 9)
 
-    # 1. Print Global Statistics
+    # Print Global Statistics
     print_dataset_statistics(metadata_path, world_pos_idxs, vel_idxs, stress_idxs, mesh_pos_idxs)
 
-    # 2. Load Trajectory Data
+    # Load Trajectory Data
     print(f"Loading trajectory {traj_idx} from {preprocessed_path}...")
     if not os.path.exists(preprocessed_path):
         raise ValueError(f"Data not found at {preprocessed_path}\n"
@@ -268,9 +296,9 @@ def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_wo
     A = traj["A"]
     if A.ndim == 3:
         A = A[t_step]
-    X_seq_norm = traj["X_seq_norm"]  # [T, N, F]
-    mean = traj["mean"]  # [1, 1, F]
-    std = traj["std"]  # [1, 1, F]
+    X_seq_norm = traj["X_seq_norm"]
+    mean = traj["mean"]
+    std = traj["std"]
     cells = traj["cells"]
     node_type = traj["node_type"]
 
@@ -280,12 +308,10 @@ def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_wo
         print(f"Time step {t_step} exceeds trajectory length {T}. Showing last frame.")
         t_step = T - 1
 
-    # 3. Extract and Denormalize Data for specific step
-    # We want to see the physical ground truth, so we denormalize.
-    X_t_norm = X_seq_norm[t_step]  # [N, F]
+    # Extract and Denormalize Data for specific step
+    X_t_norm = X_seq_norm[t_step]
 
     # Denormalize: Phys = Norm * Std + Mean
-    # Ensure mean/std are squeezed to [F] or [1, F] matching X_t_norm
     mean_vec = mean.squeeze()
     std_vec = std.squeeze()
 
@@ -295,17 +321,15 @@ def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_wo
     pos_phys = X_t_phys[:, world_pos_idxs].numpy()
     stress_phys = X_t_phys[:, stress_idxs].numpy().squeeze()
 
-    # Node type is usually not normalized (std=1, mean=0 in data_loader),
-    # but we have the raw integer node_type tensor stored in traj dict anyway.
+    # Node type is not normalized
     node_type_np = node_type.numpy()
     cells_np = cells.numpy()
 
-    # 4. Filter for Visualization
-    pos_viz, stress_viz, type_viz, cells_viz = apply_filter_mask(
-        pos_phys, stress_phys, node_type_np, cells_np, render_mode
-    )
+    # Filter for Visualization
+    pos_viz, stress_viz, type_viz, cells_viz = apply_filter_mask(pos_phys, stress_phys, node_type_np, cells_np,
+                                                                 render_mode)
 
-    # 5. Compute Dynamic Edges (Optional validation)
+    # Compute Dynamic Edges
     dynamic_edges = None
     if "world_edge_index" in traj:
         print("Using pre-computed world edges from data loader...")
@@ -317,17 +341,11 @@ def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_wo
     else:
         print("No pre-computed world edges found.")
 
-    # 6. Visualize
+    # Visualize
     print(f"Visualizing Trajectory {traj_idx} at Time Step {t_step}...")
-    visualize_ground_truth(
-        pos=pos_viz,
-        cells=cells_viz,
-        stress=stress_viz,
-        node_type=type_viz,
-        title=f"Data Exploration: Traj {traj_idx}, t={t_step}",
-        color_mode="stress",
-        dynamic_edges=dynamic_edges
-    )
+    visualize_ground_truth(pos=pos_viz, cells=cells_viz, stress=stress_viz, node_type=type_viz,
+                           title=f"Data Exploration: Traj {traj_idx}, t={t_step}", color_mode="stress",
+                           dynamic_edges=dynamic_edges)
 
 
 if __name__ == "__main__":
