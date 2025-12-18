@@ -1,0 +1,68 @@
+base_config_path: "config.yaml"
+
+device:
+  # If true, force CUDA (will error if unavailable). If false, `get_device(False)` selects mps/cuda/cpu.
+  cuda: false
+
+constants:
+  # Node type IDs used in loss masking
+  normal_node: 0
+  boundary_node: 3
+  # Output dimensions (velocity 3 + stress 1 in current setup)
+  dim_out_vel: 3
+  dim_out_stress: 1
+
+data:
+  # As requested: train on 3 trajectories
+  num_train_trajs: 2
+  # Must be "standard" to create a real validation set
+  mode: "standard"
+  # Fixed split fraction reused across all trials
+  val_fraction: 0.2
+  # Dataloader settings (kept fixed across trials for fairness)
+  batch_size: 16
+  num_workers: 0
+  pin_memory: false
+
+study:
+  seed: 42
+  trials: 40
+  epochs: 100
+  show_progress_bar: true
+
+  sampler:
+    name: "tpe"
+
+  pruner:
+    name: "median"
+    n_startup_trials: 5
+    n_warmup_steps: 5
+
+search_space:
+  # Float ranges. `log` controls Optuna's log sampling.
+  lr:
+    min: 0.00003
+    max: 0.003
+    log: true
+
+  adam_weight_decay:
+    min: 0.00000003
+    max: 0.001
+    log: true
+
+  gamma_lr_scheduler:
+    min: 0.99
+    max: 0.9999
+    log: false
+
+  # Categorical lists
+  dropout_candidates: [0.0, 0.05, 0.1, 0.2]
+  activation_candidates: ["ELU", "ReLU"]
+
+  # Must be a list of candidates; each candidate must be a list with same length as base_config model.k_pool_ratios.
+  k_pool_ratios_candidates:
+    - [0.95, 0.95, 0.95]
+    - [0.9, 0.8, 0.7]
+
+output:
+  best_config_path: "best_hpo_config.yaml"

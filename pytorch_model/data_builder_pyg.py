@@ -146,13 +146,11 @@ class TrajectoryDataset(InMemoryDataset):
                         node_type=torch.tensor(node_type_idx, dtype=torch.long),
                         cells=torch.tensor(mesh_cells, dtype=torch.long))
 
-            # [FIX] Apply Pre-Filter
             if self.pre_filter is not None and not self.pre_filter(data):
-                continue
+                raise ValueError
 
-            # [FIX] Apply Pre-Transform
             if self.pre_transform is not None:
-                data = self.pre_transform(data)
+                raise ValueError
 
             data_list.append(data)
 
