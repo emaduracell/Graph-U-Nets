@@ -20,24 +20,19 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import torch
 import torch.optim as optim
-
+import torch.nn.functional as F
 from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
+from torch.amp import autocast
 
 from data.defplate_dataset import DefPlateDataset, collate_unet
-from helpers.helpers import (
-    create_model_hyperparams,
-    get_device,
-    get_feature_indices,
-    load_config,
-    load_trajectories_preprocessed,
-    move_any_to_device,
-)
+from helpers.helpers import (create_model_hyperparams, get_device, get_feature_indices, load_config,
+                             load_trajectories_preprocessed, move_any_to_device)
 from model_gunet.gunet_deforming_plate import GraphUNet_DefPlate
 
 
-def _require(cfg: Dict[str, Any], key_path: str) -> Any:
+def _require(cfg, key_path):
     """
     Fetch a required config value using dot-separated path, e.g. 'study.trials'.
     Raises KeyError with a clear message if missing.
@@ -50,32 +45,20 @@ def _require(cfg: Dict[str, Any], key_path: str) -> Any:
         cur = cur[p]
     return cur
 
-
-def _require_list(cfg: Dict[str, Any], key_path: str) -> List[Any]:
+def _require_list(cfg, key_path):
     v = _require(cfg, key_path)
     if not isinstance(v, list):
         raise TypeError(f"Config key '{key_path}' must be a list")
     return v
 
-
-def _seed_all(seed: int) -> None:
+def _seed_all(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-
-def _compute_single_graph_loss(
-    pred: torch.Tensor,
-    target: torch.Tensor,
-    nodetype: torch.Tensor,
-    velocity_idxs: slice,
-    stress_idxs: slice,
-    normal_node: int,
-    boundary_node: int,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    import torch.nn.functional as F
+def _compute_single_graph_loss(pred, target, nodetype, velocity_idxs, stress_idxs, normal_node, boundary_node):
 
     vel_mask = (nodetype == normal_node)
     stress_mask = (nodetype == normal_node) | (nodetype == boundary_node)
@@ -96,15 +79,8 @@ def _compute_single_graph_loss(
     return vel_loss, stress_loss
 
 
-def compute_loss(
-    feat_tp1_mat_list: List[torch.Tensor],
-    node_types_list: List[torch.Tensor],
-    preds_list: List[torch.Tensor],
-    velocity_idxs: slice,
-    stress_idxs: slice,
-    normal_node: int,
-    boundary_node: int,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def compute_loss(feat_tp1_mat_list, node_types_list, preds_list, velocity_idxs, stress_idxs, normal_node,
+                 boundary_node):
     total_loss = torch.zeros((), device=preds_list[0].device)
     total_vel_loss = torch.zeros((), device=preds_list[0].device)
     total_stress_loss = torch.zeros((), device=preds_list[0].device)
@@ -123,17 +99,8 @@ def compute_loss(
 
 
 @torch.no_grad()
-def _validate_one_epoch(
-    model: torch.nn.Module,
-    val_loader: DataLoader,
-    device: torch.device,
-    velocity_idxs: slice,
-    stress_idxs: slice,
-    amp_enabled: bool,
-    normal_node: int,
-    boundary_node: int,
-) -> float:
-    from torch.amp import autocast
+def _validate_one_epoch(model, val_loader, device, velocity_idxs, stress_idxs, amp_enabled, normal_node,
+                        boundary_node):
 
     model.eval()
     total_loss = 0.0
@@ -153,35 +120,16 @@ def _validate_one_epoch(
         else:
             preds_list = model(adj_mat_list, feat_t_mat_list)
 
-        batch_loss, _, _ = compute_loss(
-            feat_tp1_mat_list,
-            node_types,
-            preds_list,
-            velocity_idxs,
-            stress_idxs,
-            normal_node,
-            boundary_node,
-        )
+        batch_loss, _, _ = compute_loss(feat_tp1_mat_list, node_types, preds_list, velocity_idxs,
+                                        stress_idxs, normal_node, boundary_node)
         total_loss += float(batch_loss.detach().cpu())
         num_batches += 1
 
     return total_loss / max(num_batches, 1)
 
 
-def _train_one_epoch(
-    model: torch.nn.Module,
-    train_loader: DataLoader,
-    optimizer: torch.optim.Optimizer,
-    device: torch.device,
-    velocity_idxs: slice,
-    stress_idxs: slice,
-    amp_enabled: bool,
-    scaler: "torch.amp.GradScaler | None",
-    move_all_to_device: bool,
-    normal_node: int,
-    boundary_node: int,
-) -> None:
-    from torch.amp import autocast
+def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stress_idxs,  amp_enabled, scaler,
+                     move_all_to_device, normal_node, boundary_node):
 
     model.train()
     for batch in tqdm(train_loader, desc="Train", leave=False):
@@ -198,26 +146,12 @@ def _train_one_epoch(
         if device.type == "cuda":
             with autocast(device_type=device.type, enabled=amp_enabled):
                 preds_list = model(adj_mat_list, feat_t_mat_list)
-                batch_loss, _, _ = compute_loss(
-                    feat_tp1_mat_list,
-                    node_types,
-                    preds_list,
-                    velocity_idxs,
-                    stress_idxs,
-                    normal_node,
-                    boundary_node,
-                )
+                batch_loss, _, _ = compute_loss(feat_tp1_mat_list, node_types, preds_list, velocity_idxs,
+                                                stress_idxs, normal_node, boundary_node)
         else:
             preds_list = model(adj_mat_list, feat_t_mat_list)
-            batch_loss, _, _ = compute_loss(
-                feat_tp1_mat_list,
-                node_types,
-                preds_list,
-                velocity_idxs,
-                stress_idxs,
-                normal_node,
-                boundary_node,
-            )
+            batch_loss, _, _ = compute_loss(feat_tp1_mat_list, node_types, preds_list, velocity_idxs, stress_idxs,
+                                            normal_node, boundary_node)
 
         if amp_enabled and scaler is not None:
             scaler.scale(batch_loss).backward()
@@ -238,52 +172,35 @@ def _make_fixed_split_indices(n: int, seed: int, val_fraction: float = 0.2) -> T
     return train_idx, val_idx
 
 
-def _create_dataloaders_for_hpo(
-    dataset: DefPlateDataset,
-    batch_size: int,
-    num_workers: int,
-    pin_memory: bool,
-    seed: int,
-    val_fraction: float,
-) -> Tuple[DataLoader, DataLoader]:
+def _create_dataloaders_for_hpo(dataset, batch_size, num_workers, pin_memory, seed, val_fraction):
     train_idx, val_idx = _make_fixed_split_indices(len(dataset), seed=seed, val_fraction=val_fraction)
     train_set = Subset(dataset, train_idx)
     val_set = Subset(dataset, val_idx)
 
     # For fair comparison across trials, keep ordering deterministic (no shuffle).
-    train_loader = DataLoader(
-        train_set,
-        batch_size=batch_size,
-        shuffle=False,
-        collate_fn=collate_unet,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-    )
-    val_loader = DataLoader(
-        val_set,
-        batch_size=batch_size,
-        shuffle=False,
-        collate_fn=collate_unet,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-    )
+    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=False, collate_fn=collate_unet,
+                              num_workers=num_workers, pin_memory=pin_memory)
+    val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False, collate_fn=collate_unet,
+                            num_workers=num_workers, pin_memory=pin_memory)
+
     return train_loader, val_loader
 
 
-def _suggest_from_candidates(
-    trial: "optuna.trial.Trial",
-    name: str,
-    candidates: List[Any],
-) -> Any:
+def _suggest_from_candidates(trial, name, candidates):
     if len(candidates) < 1:
         raise ValueError(f"Candidates list for '{name}' must be non-empty")
     idx = trial.suggest_int(f"{name}_idx", 0, len(candidates) - 1)
     return candidates[int(idx)]
 
 
-def run_study(
-    hyperconfig_path: str,
-) -> None:
+def run_study(hyperconfig_path):
+    """
+    Run hyperparameter optimization
+
+    Args:
+        hyperconfig_path:
+    """
+
     try:
         import optuna  # type: ignore
     except Exception as e:  # pragma: no cover
@@ -334,8 +251,7 @@ def run_study(
 
     # Load trajectories once
     list_of_trajs = load_trajectories_preprocessed(
-        os.path.join(train_cfg["datapath"], "preprocessed_train.pt"),
-        train_cfg["num_train_trajs"],
+        os.path.join(train_cfg["datapath"], "preprocessed_train.pt"), train_cfg["num_train_trajs"],
     )
     if move_all_to_device:
         list_of_trajs = move_any_to_device(list_of_trajs, device, non_blocking=False)
@@ -346,16 +262,11 @@ def run_study(
         pin_memory = False
 
     dataset = DefPlateDataset(list_of_trajs, world_pos_idxs=feat_idx.world_pos, velocity_idxs=feat_idx.velocity)
-    train_loader, val_loader = _create_dataloaders_for_hpo(
-        dataset=dataset,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        seed=seed,
-        val_fraction=val_fraction,
-    )
+    train_loader, val_loader = _create_dataloaders_for_hpo(dataset=dataset, batch_size=batch_size,
+                                                           num_workers=num_workers, pin_memory=pin_memory, seed=seed,
+                                                           val_fraction=val_fraction)
 
-    depth = len(model_cfg.get("k_pool_ratios", [0.95, 0.95, 0.95]))
+    depth = len(model_cfg.get("k_pool_ratios"))
 
     # Search spaces (no defaults; required).
     sp_lr = _require(hypercfg, "search_space.lr")
@@ -376,11 +287,11 @@ def run_study(
         trial_train_cfg = copy.deepcopy(train_cfg)
 
         trial_train_cfg["lr"] = float(
-            trial.suggest_float("lr", float(_require(sp_lr, "min")), float(_require(sp_lr, "max")), log=bool(_require(sp_lr, "log")))
+            trial.suggest_float("lr", float(_require(sp_lr, "min")), float(_require(sp_lr, "max")),
+                                log=bool(_require(sp_lr, "log")))
         )
         trial_train_cfg["adam_weight_decay"] = float(
-            trial.suggest_float(
-                "adam_weight_decay",
+            trial.suggest_float("adam_weight_decay",
                 float(_require(sp_wd, "min")),
                 float(_require(sp_wd, "max")),
                 log=bool(_require(sp_wd, "log")),
@@ -427,29 +338,14 @@ def run_study(
 
         best_val = float("inf")
         for _epoch in range(int(epochs)):
-            _train_one_epoch(
-                model=model,
-                train_loader=train_loader,
-                optimizer=optimizer,
-                device=device,
-                velocity_idxs=feat_idx.velocity,
-                stress_idxs=feat_idx.stress,
-                amp_enabled=amp_enabled,
-                scaler=scaler,
-                move_all_to_device=move_all_to_device,
-                normal_node=normal_node,
-                boundary_node=boundary_node,
-            )
-            val_loss = _validate_one_epoch(
-                model=model,
-                val_loader=val_loader,
-                device=device,
-                velocity_idxs=feat_idx.velocity,
-                stress_idxs=feat_idx.stress,
-                amp_enabled=amp_enabled,
-                normal_node=normal_node,
-                boundary_node=boundary_node,
-            )
+            _train_one_epoch(model=model, train_loader=train_loader, optimizer=optimizer, device=device,
+                             velocity_idxs=feat_idx.velocity, stress_idxs=feat_idx.stress, amp_enabled=amp_enabled,
+                             scaler=scaler, move_all_to_device=move_all_to_device, normal_node=normal_node,
+                             boundary_node=boundary_node)
+            val_loss = _validate_one_epoch(model=model, val_loader=val_loader, device=device,
+                                           velocity_idxs=feat_idx.velocity, stress_idxs=feat_idx.stress,
+                                           amp_enabled=amp_enabled, normal_node=normal_node,
+                                           boundary_node=boundary_node)
             best_val = min(best_val, float(val_loss))
             scheduler.step()
 
@@ -520,11 +416,10 @@ def run_study(
     print(f"\n[hpo] Saved best config to: {out_path}")
 
 
-def main() -> None:
+def main():
     # All settings must be specified in hyperconfig.yaml (no defaults).
     hyperconfig_path = os.path.join(os.path.dirname(__file__), "hyperconfig.yaml")
     run_study(hyperconfig_path=hyperconfig_path)
-
 
 if __name__ == "__main__":
     main()

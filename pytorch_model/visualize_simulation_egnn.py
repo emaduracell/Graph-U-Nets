@@ -499,7 +499,7 @@ def main(mesh_pos_idxs, world_pos_idxs, node_type_idxs, vel_idxs, stress_idxs, d
 
     # ---------------------- BUILD MODEL ----------------------
     # Load model hyperparameters from the same YAML used in training
-    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
+    config_path = os.path.join(os.path.dirname(__file__), "config_egnn.yaml")
     config = load_config(config_path)
     model_cfg = config["model"]
 
@@ -718,7 +718,7 @@ if __name__ == "__main__":
     rollout_set = True  # if True, run multi-step rollout
     rollout_steps = 10  # maximum number of rollout steps for multi-step visualization
     render_mode = "all"  # options: "all", "no_border", "no_sphere", "no_border_no_sphere"
-    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
+    config_path = os.path.join(os.path.dirname(__file__), "config_egnn.yaml")
     config = load_config(config_path)
     
     base_dir = os.path.dirname(os.path.dirname(__file__))

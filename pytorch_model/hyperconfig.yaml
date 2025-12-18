@@ -1,4 +1,4 @@
-base_config_path: "config.yaml"
+base_config_path: "config_gunet.yaml"
 
 device:
   # If true, force CUDA (will error if unavailable). If false, `get_device(False)` selects mps/cuda/cpu.

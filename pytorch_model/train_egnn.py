@@ -16,6 +16,7 @@ from helpers.helpers import (format_training_time, create_model_hyperparams, loa
                              print_training_config, setup_paths, get_feature_indices, get_device, print_overfit_samples,
                              move_any_to_device)
 from torch.amp import autocast, GradScaler
+import argparse
 
 # Constants
 BOUNDARY_NODE = 3
@@ -297,7 +298,7 @@ def train_egnn(device, num_workers, pin_memory, config_path=None):
     """Training loop"""
 
     if config_path is None:
-        config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
+        config_path = os.path.join(os.path.dirname(__file__), "config_egnn.yaml")
     config = load_config(config_path)
 
     # Extract model and training parameters
@@ -416,7 +417,6 @@ def train_egnn(device, num_workers, pin_memory, config_path=None):
     return model, test_loader, history, feat_idx, plots_dir
 
 if __name__ == "__main__":
-    import argparse
     parser = argparse.ArgumentParser(description='Train EGNN model')
     parser.add_argument('--config', type=str, default=None,
                         help='Path to config YAML file (default: config.yaml)')
