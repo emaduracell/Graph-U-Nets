@@ -4,7 +4,6 @@ model:
   hidden_dim: 128
   depth: 3
   pool_ratios: [0.95, 0.95, 0.95]
-
   # MLP Head args
   activation_mlps_final: "ELU"
   dropout_mlps_final: 0 # default = 0.1, overfit = 0
@@ -25,8 +24,8 @@ training:
   overfit_traj_id: 0 # Which trajectory index to overfit on
   overfit_time_idx: [0, 1, 2, 3, 4, 5, 6, 7] # specific time steps to train on
   # Paths
-  datapath: "processed_data/pyg_data" # Folder containing pyg_processed_data.pt
+  datapath: "processed_data_pyg/pyg_data" # Folder containing pyg_processed_data.pt
   model_path_out: "model_out/"
   # Optimization
   amp: False
-  move_all_to_device: True # Load entire dataset to GPU memory (Very fast for small/medium datasets)
+  move_all_to_device: False # Load entire dataset to GPU memory (Very fast for small/medium datasets)

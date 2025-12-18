@@ -121,6 +121,33 @@ def get_device(cuda: bool):
             print(f"[get_device] Using device: {dev}")
     return dev
 
+def get_device_pyg(cuda: bool):
+    """
+    Determine the best available device.
+    """
+    if cuda:
+        if torch.cuda.is_available():
+            dev = torch.device("cuda")
+            try:
+                name = torch.cuda.get_device_name(dev)
+                print(f"[get_device] Using CUDA device: {name}")
+            except Exception:
+                print(f"[get_device] Using CUDA device: {dev}")
+        else:
+            raise ValueError("CUDA is not available")
+    else:
+        if torch.cuda.is_available():
+            dev = torch.device("cuda")
+            try:
+                name = torch.cuda.get_device_name(dev)
+                print(f"[get_device] Using CUDA device: {name}")
+            except Exception:
+                print(f"[get_device] Using CUDA device: {dev}")
+        else:
+            dev = torch.device("cpu")
+            print(f"[get_device] Using device: {dev}")
+    return dev
+
 def get_feature_indices(include_mesh_pos):
     """Get feature indices based on whether mesh positions are included."""
     if include_mesh_pos:

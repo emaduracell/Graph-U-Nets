@@ -262,7 +262,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
 
         if device.type == 'cuda':
             with autocast(device_type=device.type, enabled=amp_enabled):
-                preds_list = model(adj_mat_list, feat_t_mat_list, feat_tp1_mat_list, node_types)
+                preds_list = model(adj_mat_list, feat_t_mat_list)
                 batch_loss, vel_loss, stress_loss = compute_loss(adj_mat_list, feat_tp1_mat_list, node_types, preds_list,
                                                                  velocity_idxs, stress_idxs)
         else:
@@ -294,7 +294,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
 def train_gunet(device, num_workers, pin_memory):
     """Training loop"""
     # Load configuration from YAML
-    config_path = os.path.join(os.path.dirname(__file__), "pyg_config.yaml")
+    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
     config = load_config(config_path)
     # Extract model and training parameters
     model_cfg = config['model']
@@ -302,7 +302,7 @@ def train_gunet(device, num_workers, pin_memory):
     # Load train config
     # datapath: processed_data/data_standard_True so add preprocessed_train.pt
     checkpoint_path, plots_dir = setup_paths(train_cfg)
-    dataconfig = load_config(train_cfg['datapath'] + '/pyg_dataconfig.yaml')
+    dataconfig = load_config(train_cfg['datapath'] + '/used_dataconfig.yaml')
     include_mesh_pos = dataconfig['include_mesh_pos']
     feat_idx = get_feature_indices(include_mesh_pos)
     torch.manual_seed(train_cfg['random_seed'])
@@ -417,7 +417,6 @@ if __name__ == "__main__":
     num_workers = 0
     pin_memory = False
     device = get_device(cuda)
-    # TODO: set to false if you have compatibility problems
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     # PyTorch 2.x:
