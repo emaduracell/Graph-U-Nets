@@ -1,5 +1,5 @@
 import torch.nn as nn
-from model.helpers_models import get_adj_norm_fn
+from model_gunet.helpers_models import get_adj_norm_fn
 import torch
 
 class GCN(nn.Module):

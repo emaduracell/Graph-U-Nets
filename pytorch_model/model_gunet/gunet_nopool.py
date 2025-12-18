@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from model.helpers_models import get_adj_norm_fn
-from model.gcn_model import GCN
+from model_gunet.helpers_models import get_adj_norm_fn
+from model_gunet.gcn_model import GCN
 
 
 class GraphUnetNoPool(nn.Module):

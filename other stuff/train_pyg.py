@@ -14,7 +14,7 @@ from torch.amp import autocast, GradScaler
 from helpers.helpers import (format_training_time, load_config, print_training_config,
                              setup_paths, get_feature_indices, get_device_pyg, print_overfit_samples)
 from data_builder_pyg import TrajectoryDataset
-from model.pyg_gunet_wrapper import GraphUNet_DefPlate
+from model_gunet.pyg_gunet_wrapper import GraphUNet_DefPlate
 
 # Constants
 BOUNDARY_NODE = 3

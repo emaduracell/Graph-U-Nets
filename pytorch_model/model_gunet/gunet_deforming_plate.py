@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from model.gunet_original import GraphUnet
-from model.gunet_nopool import GraphUnetNoPool
-from model.gcn_model import GCN
-from model.initializer import Initializer
-from model.helpers_models import get_adj_norm_fn
+from model_gunet.gunet_original import GraphUnet
+from model_gunet.gunet_nopool import GraphUnetNoPool
+from model_gunet.gcn_model import GCN
+from model_gunet.initializer import Initializer
+from model_gunet.helpers_models import get_adj_norm_fn
 
 
 class GraphUNet_DefPlate(nn.Module):

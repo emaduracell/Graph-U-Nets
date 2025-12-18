@@ -1,5 +1,5 @@
 import torch.nn as nn
-from model.helpers_models import top_k_graph, get_adj_norm_fn
+from model_gunet.helpers_models import top_k_graph, get_adj_norm_fn
 
 class Pool(nn.Module):
     """
