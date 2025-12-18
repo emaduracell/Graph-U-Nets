@@ -417,7 +417,6 @@ if __name__ == "__main__":
     num_workers = 0
     pin_memory = False
     device = get_device(cuda)
-    # TODO: set to false if you have compatibility problems
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     # PyTorch 2.x:
