@@ -15,8 +15,8 @@ def make_dynamic_edges_trace(coords, edge_index):
     Creates Red Lines for the dynamic interactions (world edges).
 
     Args:
-        coords:
-        edge_index:
+        coords: Numpy array or tensor containing node coordinates (N, 3).
+        edge_index: Tensor or array containing connectivity indices for edges (2, E).
     :return Scatter3d
     """
     if edge_index is None:
@@ -54,14 +54,14 @@ def make_wireframe(x, y, z, i, j, k, color='black', width=1.5):
     Creates a Scatter3d trace that draws the edges of the triangles.
 
     Args:
-        x:
-        y:
-        z:
-        i:
-        j:
-        k:
-        color:
-        width:
+        x: X-coordinates of the mesh nodes.
+        y: Y-coordinates of the mesh nodes.
+        z: Z-coordinates of the mesh nodes.
+        i: Indices of the first vertices of the triangular elements.
+        j: Indices of the second vertices of the triangular elements.
+        k: Indices of the third vertices of the triangular elements.
+        color: Color string for the wireframe lines.
+        width: Float specifying the width of the wireframe lines.
     :return: Scatter3d trace
     """
     tri_points = np.vstack([
@@ -86,11 +86,11 @@ def print_dataset_statistics(metadata_path, world_pos_idxs, vel_idxs, stress_idx
     Loads and prints the statistics calculated by data_loader and saved by main_data.
 
     Args:
-        metadata_path:
-        world_pos_idxs:
-        vel_idxs:
-        stress_idxs:
-        mesh_pos_idxs:
+        metadata_path: File path to the saved metadata dictionary (.pt file).
+        world_pos_idxs: Slices or indices corresponding to world position features.
+        vel_idxs: Slices or indices corresponding to velocity features.
+        stress_idxs: Slices or indices corresponding to stress features.
+        mesh_pos_idxs: Optional slices or indices corresponding to mesh position features.
     """
     print("\n" + "=" * 60)
     print(" DATASET STATISTICS (Calculated by Data Loader)")
@@ -149,13 +149,13 @@ def visualize_ground_truth(pos, cells, stress, node_type, title, color_mode="str
     Visualizes a single state of the ground truth data.
 
     Args:
-        pos:
-        cells:
-        stress:
-        node_type:
-        title:
-        color_mode:
-        dynamic_edges:
+        pos: Array of node positions with shape (N, 3).
+        cells: Array containing cell connectivity (tetrahedra or triangles).
+        stress: Array of stress values for each node.
+        node_type: Array of node types (e.g., normal, boundary).
+        title: String title for the Plotly figure.
+        color_mode: String indicating the coloring mode ('stress' or 'node_type').
+        dynamic_edges: Optional edge index for drawing world/dynamic edges.
     """
     # Triangulation logic
     tri_i, tri_j, tri_k = [], [], []
@@ -201,7 +201,7 @@ def visualize_ground_truth(pos, cells, stress, node_type, title, color_mode="str
     fig.update_layout(legend=dict(x=0.01, y=0.99, xanchor="left", yanchor="top", bgcolor="rgba(255,255,255,0.6)"))
 
     # Push the mesh colorbar further right
-    fig.update_traces(selector=dict(type="mesh3d"), colorbar=dict(x=1.08) )
+    fig.update_traces(selector=dict(type="mesh3d"), colorbar=dict(x=1.08))
 
     # Dynamic Edges (World Edges)
     if dynamic_edges is not None:
@@ -209,9 +209,9 @@ def visualize_ground_truth(pos, cells, stress, node_type, title, color_mode="str
 
     fig.update_scenes(aspectmode="data")
     fig.update_layout(height=700, width=900, title_text=title, scene=dict(
-            xaxis_title="X", yaxis_title="Y", zaxis_title="Z"
-        )
+        xaxis_title="X", yaxis_title="Y", zaxis_title="Z"
     )
+                      )
     fig.show()
 
 
@@ -220,11 +220,11 @@ def apply_filter_mask(pos, stress, node_type, cells, render_mode):
     Filters nodes based on render_mode (e.g., hiding borders).
 
     Args:
-        pos:
-        stress:
-        node_type:
-        cells:
-        render_mode:
+        pos: Array of node positions.
+        stress: Array of node stress values.
+        node_type: Array of node types.
+        cells: Array of cell connectivity indices.
+        render_mode: String specifying the rendering filter (e.g., 'all', 'no_border').
     """
     mode = render_mode.lower()
     if mode == "all":
@@ -255,13 +255,13 @@ def apply_filter_mask(pos, stress, node_type, cells, render_mode):
 def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_world_edges, include_mesh_pos):
     """
     Args:
-        render_mode:
-        traj_idx:
-        t_step:
-        preprocessed_path:
-        metadata_path:
-        add_world_edges:
-        include_mesh_pos:
+        render_mode: String filter for visualization (e.g., 'all').
+        traj_idx: Integer index of the trajectory to load and visualize.
+        t_step: Integer index of the time step to extract.
+        preprocessed_path: Path to the file containing preprocessed trajectory data.
+        metadata_path: Path to the file containing dataset statistics.
+        add_world_edges: Parameter relating to world edge inclusion (Note: unused in function body).
+        include_mesh_pos: Boolean flag indicating if mesh positions are included in the dataset features.
     """
 
     if include_mesh_pos:
@@ -335,9 +335,9 @@ def main(render_mode, traj_idx, t_step, preprocessed_path, metadata_path, add_wo
         print("Using pre-computed world edges from data loader...")
         # Check if world_edge_index is a list (per timestep) or single tensor
         if isinstance(traj["world_edge_index"], list):
-             dynamic_edges = traj["world_edge_index"][t_step]
+            dynamic_edges = traj["world_edge_index"][t_step]
         else:
-             dynamic_edges = traj["world_edge_index"]
+            dynamic_edges = traj["world_edge_index"]
     else:
         print("No pre-computed world edges found.")
 
@@ -352,7 +352,7 @@ if __name__ == "__main__":
     # Choose dataset by setting NORM_METHOD, INCLUDE_MESH_POS
     NORM_METHOD = "standard"
     INCLUDE_MESH_POS = True
-    
+
     # Hardcoded path to data + metadata
     DATA_DIR = "processed_data/data_radius_True"
     PREPROCESSED_FILE = os.path.join(DATA_DIR, "preprocessed_train.pt")
