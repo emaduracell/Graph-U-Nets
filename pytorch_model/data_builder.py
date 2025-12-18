@@ -419,7 +419,7 @@ def load_all_trajectories(dataconfig):
     a_time_var = dataconfig.get('a_time_var')
 
     print(dataconfig['add_world_edges'])
-    if dataconfig['add_world_edges'] not in ['radius', 'k_neighb', 'None']:
+    if dataconfig['add_world_edges'] not in ['radius', 'neighbours', 'None']:
         raise ValueError(f"add_world_edges == {dataconfig['add_world_edges']} not supported")
     if norm_method not in ['centroid', 'standard', 'row']:
         raise ValueError(f"norm_method == {norm_method} not supported")
@@ -465,6 +465,72 @@ def load_all_trajectories(dataconfig):
     apply_normalization(list_of_trajs, mean, std_dev)
 
     print(f"\nLoaded {len(list_of_trajs)} trajectories.")
+    return list_of_trajs
+
+
+def load_all_trajectories_with_precomputed_stats(dataconfig, mean, std_dev):
+    """
+    Load trajectories from TFRecord and apply precomputed normalization statistics.
+
+    This is intended for validation/test splits: features are built exactly like train
+    (including recomputing world edges), but mean/std are NOT refit on this split.
+
+    Args:
+        dataconfig: dict
+            Same dataconfig used for training preprocessing, except `tfrecord_path` points
+            to the split to load (e.g., valid.tfrecord).
+        mean: torch.Tensor
+            Train-fitted mean (shape [F] or [1,1,F]).
+        std_dev: torch.Tensor
+            Train-fitted std (shape [F] or [1,1,F]).
+    """
+    include_mesh_pos = dataconfig['include_mesh_pos']
+    norm_method = dataconfig['normalization_method']
+    adj_norm = dataconfig['adj_norm']
+    tfrecord_path = dataconfig['tfrecord_path']
+    meta_path = dataconfig['meta_path']
+    max_trajs = dataconfig['max_trajs']
+
+    add_world_edges_dict = {
+        'add_world_edges': dataconfig['add_world_edges'],
+        'radius_world_edge': dataconfig['radius_world_edge'],
+        'k_neighb': dataconfig['k_neighb']
+    }
+    a_time_var = dataconfig.get('a_time_var')
+
+    if dataconfig['add_world_edges'] not in ['radius', 'neighbours', 'k_neighb', 'None']:
+        raise ValueError(f"add_world_edges == {dataconfig['add_world_edges']} not supported")
+    if norm_method not in ['centroid', 'standard', 'row']:
+        raise ValueError(f"norm_method == {norm_method} not supported")
+    if adj_norm not in ['row', 'sym']:
+        raise ValueError(f"adj_norm == {adj_norm} not supported (expected 'row' or 'sym')")
+
+    adj_norm_fn = get_adj_norm_fn(adj_norm)
+
+    # Load meta.json for decoding
+    with open(meta_path, "r") as f:
+        meta = json.load(f)
+
+    loader = tfrecord_loader(tfrecord_path, index_path=None)
+    list_of_trajs = []
+    idx = 0  # debug idx
+
+    for traj_idx, record in enumerate(loader):
+        print(f"processing trajectory {traj_idx}")
+        if max_trajs is not None and traj_idx >= max_trajs:
+            print("[load_all_trajectories_with_precomputed_stats] Reached wanted number of trajectories")
+            break
+
+        traj = cast_trajectory_from_record(record, meta)
+        dict_traj, _ = process_single_trajectory(
+            traj, include_mesh_pos, norm_method, idx, add_world_edges_dict, a_time_var, adj_norm_fn
+        )
+        list_of_trajs.append(dict_traj)
+
+    # Apply *train-fitted* normalization (broadcasting handled in apply_normalization)
+    apply_normalization(list_of_trajs, mean, std_dev)
+
+    print(f"\nLoaded {len(list_of_trajs)} trajectories (with precomputed normalization).")
     return list_of_trajs
 
 

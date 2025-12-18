@@ -42,7 +42,7 @@ class TrainingHistory:
 
 def _create_standard_dataloaders(dataset, batch_size, shuffle, num_workers, pin_memory):
     """
-    Create train/test dataloaders with 80/20 split.
+    Create train/validation dataloaders from two datasets.
 
     Args:
         dataset: DefPlateDataset
@@ -53,22 +53,19 @@ def _create_standard_dataloaders(dataset, batch_size, shuffle, num_workers, pin_
 
     :return: Tuple[DataLoader, DataLoader]
     """
-    total = len(dataset)
-    perm = torch.randperm(total)
-    split = int(0.8 * total)
+    raise ValueError("Use `_create_train_valid_dataloaders(train_dataset, valid_dataset, ...)` instead.")
 
-    train_idx = perm[:split]
-    test_idx = perm[split:]
 
-    train_set = Subset(dataset, train_idx)
-    test_set = Subset(dataset, test_idx)
-
-    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_unet,
+def _create_train_valid_dataloaders(train_dataset, valid_dataset, batch_size, shuffle, num_workers, pin_memory):
+    """
+    Create train/validation dataloaders from explicit datasets (no random split).
+    """
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_unet,
                               num_workers=num_workers, pin_memory=pin_memory)
-    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, collate_fn=collate_unet,
-                             num_workers=num_workers, pin_memory=pin_memory)
+    valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_unet,
+                              num_workers=num_workers, pin_memory=pin_memory)
 
-    return train_loader, test_loader
+    return train_loader, valid_loader
 
 def _create_overfit_dataloader(dataset, overfit_traj_id, overfit_time_idx_list):
     """
@@ -321,16 +318,26 @@ def train_gunet(device, num_workers, pin_memory):
             f"Please run 'python preprocess_data.py' first to generate the preprocessed data."
         )
 
-    list_of_trajs = load_trajectories_preprocessed(
+    train_trajs = load_trajectories_preprocessed(
         train_cfg['datapath'] + "/preprocessed_train.pt", train_cfg['num_train_trajs']
     )
+
+    valid_path = train_cfg['datapath'] + "/preprocessed_valid.pt"
+    if not os.path.exists(valid_path):
+        raise FileNotFoundError(
+            f"Preprocessed validation data not found at {valid_path}\n"
+            f"Generate it with `python main_valid_data.py` (after train preprocessing is available)."
+        )
+    valid_trajs = load_trajectories_preprocessed(valid_path, num_train_trajs=None)
+
     if move_all_to_device:
         if device.type == "cuda":
             free, total = torch.cuda.mem_get_info()
             print(f"[train] CUDA free/total before dataset move: {free / 1024 ** 3:.2f} / {total / 1024 ** 3:.2f} GB")
 
         print(f"[train] Moving all trajectories to {device} ...")
-        list_of_trajs = move_any_to_device(list_of_trajs, device, non_blocking=False)
+        train_trajs = move_any_to_device(train_trajs, device, non_blocking=False)
+        valid_trajs = move_any_to_device(valid_trajs, device, non_blocking=False)
 
         if device.type == "cuda":
             torch.cuda.synchronize()
@@ -345,17 +352,20 @@ def train_gunet(device, num_workers, pin_memory):
         pin_memory = False  # irrelevant / sometimes harmful here
 
     # Build dataset from these trajectories
-    dataset = DefPlateDataset(list_of_trajs, world_pos_idxs=feat_idx.world_pos, velocity_idxs=feat_idx.velocity)
-    print(f"Total training pairs (X_t, X_t+1): {len(dataset)}")
+    train_dataset = DefPlateDataset(train_trajs, world_pos_idxs=feat_idx.world_pos, velocity_idxs=feat_idx.velocity)
+    valid_dataset = DefPlateDataset(valid_trajs, world_pos_idxs=feat_idx.world_pos, velocity_idxs=feat_idx.velocity)
+    print(f"Total training pairs (X_t, X_t+1): {len(train_dataset)}")
+    print(f"Total validation pairs (X_t, X_t+1): {len(valid_dataset)}")
 
     # Create dataloaders based on mode
     if train_cfg['mode'] == "overfit":
-        loader = _create_overfit_dataloader(dataset, train_cfg.get('overfit_traj_id'),
+        loader = _create_overfit_dataloader(train_dataset, train_cfg.get('overfit_traj_id'),
                                             train_cfg.get('overfit_time_idx', []))
         train_loader, test_loader = loader, loader
     else:
-        train_loader, test_loader = _create_standard_dataloaders(dataset, train_cfg['batch_size'], train_cfg['shuffle'],
-                                                                 num_workers, pin_memory)
+        train_loader, test_loader = _create_train_valid_dataloaders(
+            train_dataset, valid_dataset, train_cfg['batch_size'], train_cfg['shuffle'], num_workers, pin_memory
+        )
 
     # Build model and optimizer
     model_hyperparams = create_model_hyperparams(model_cfg)
