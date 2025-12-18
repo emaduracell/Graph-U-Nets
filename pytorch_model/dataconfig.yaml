@@ -3,6 +3,7 @@ data:
   normalization_method: "standard" # 'standard' or 'row'
   adj_norm: "row" # 'sym' | 'row' (applied to adjacency in preprocessing)
   max_trajs: 300
+  valid_max_trajs: 10
   tfrecord_path: "raw_data/train.tfrecord"
   meta_path: "raw_data/meta.json"
   # Change output_dir as you wish, we keep track of the parameters in the config
