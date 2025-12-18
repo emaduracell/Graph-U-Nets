@@ -90,7 +90,15 @@ def run_final_evaluation(model, test_loader, device, history, velocity_idxs, str
     print("[train] Generating final evaluation plots...")
 
     activations = {}
-    handle = model.velocity_mlp.register_forward_hook(
+    # Support both GraphUNet (velocity_mlp) and EGNN (phi_v) models
+    if hasattr(model, 'velocity_mlp'):
+        velocity_head = model.velocity_mlp
+    elif hasattr(model, 'phi_v'):
+        velocity_head = model.phi_v
+    else:
+        raise AttributeError(f"Model {type(model)} does not have 'velocity_mlp' or 'phi_v' attribute")
+    
+    handle = velocity_head.register_forward_hook(
         lambda m, i, o: activations.update({'latent_features': i[0].detach().cpu().numpy()})
     )
 

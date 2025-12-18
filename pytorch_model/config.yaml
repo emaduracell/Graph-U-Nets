@@ -12,16 +12,16 @@ model:
 # Training parameters
 training:
   lr: 0.001 # default = 1e-4 good value 0.001
-  epochs: 200
-  batch_size: 16
-  shuffle: True # False for overfitting
-  adam_weight_decay: 0.0000001 # default: 1e-4 | overfit = 0
-  num_train_trajs: 10
-  mode: "None" # None or "overfit"
+  epochs: 10
+  batch_size: 1
+  shuffle: False # False for overfitting
+  adam_weight_decay: 0 # default: 1e-4 | overfit = 0
+  num_train_trajs: 1
+  mode: "overfit" # None or "overfit"
   gamma_lr_scheduler: 0.96 # lr_final = lr0 * gamma^epochs 0.9995 good value 0.9997
   random_seed: 42 # Seed for train/test split and any random operations
   overfit_traj_id: 0 # For overfit mode: which trajectory to use (null = use first available)
-  overfit_time_idx: [0,1,2,3,4,5,6,7] # For overfit mode: which time step t to use (null = use all time steps from trajectory)
+  overfit_time_idx: [0,1,2,3] # For overfit mode: which time step t to use (null = use all time steps from trajectory)
   # [13, 202, 302, 10, 11, 90, 321, 43]
   datapath: "processed_data/data_world=radius_mesh=True_norm=standard_At=False" # data_world=None_mesh=False_norm=standard_Ainv=True
   model_path_out: "model_out/"

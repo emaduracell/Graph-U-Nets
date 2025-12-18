@@ -1,10 +1,10 @@
 import torch
 from torch import nn, einsum, broadcast_tensors
-from helpers_egnn_model import exists, safe_div, batched_index_select, fourier_encode_dist, embedd_token
+from .helpers_egnn_model import exists, safe_div, batched_index_select, fourier_encode_dist, embedd_token
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
-from coors_norm import CoorsNorm
-from attention import GlobalLinearAttention
+from .coors_norm import CoorsNorm
+from .attention import GlobalLinearAttention
 
 # Swish activation fallback
 class Swish_(nn.Module):

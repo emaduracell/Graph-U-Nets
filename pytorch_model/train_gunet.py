@@ -40,22 +40,6 @@ class TrainingHistory:
     def create_empty(cls):
         return cls([], [], [], [], [], [], [])
 
-def _create_standard_dataloaders(dataset, batch_size, shuffle, num_workers, pin_memory):
-    """
-    Create train/validation dataloaders from two datasets.
-
-    Args:
-        dataset: DefPlateDataset
-        batch_size: int
-        shuffle: bool
-        num_workers: int
-        pin_memory: bool
-
-    :return: Tuple[DataLoader, DataLoader]
-    """
-    raise ValueError("Use `_create_train_valid_dataloaders(train_dataset, valid_dataset, ...)` instead.")
-
-
 def _create_train_valid_dataloaders(train_dataset, valid_dataset, batch_size, shuffle, num_workers, pin_memory):
     """
     Create train/validation dataloaders from explicit datasets (no random split).
