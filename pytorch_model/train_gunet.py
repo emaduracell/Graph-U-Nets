@@ -275,7 +275,7 @@ def _train_one_epoch(model, train_loader, optimizer, device, velocity_idxs, stre
 def train_gunet(device, num_workers, pin_memory):
     """Training loop"""
     # Load configuration from YAML
-    config_path = os.path.join(os.path.dirname(__file__), "config.yaml")
+    config_path = os.path.join(os.path.dirname(__file__), "config_gunet.yaml")
     config = load_config(config_path)
     # Extract model and training parameters
     model_cfg = config['model']
@@ -420,4 +420,4 @@ if __name__ == "__main__":
         pass
     model, test_loader, history, feat_idx, plots_dir = train_gunet(device, num_workers, pin_memory)
     run_final_evaluation(model, test_loader, device, history, feat_idx.velocity, feat_idx.stress, plots_dir,
-                         config_path=os.path.join(os.path.dirname(__file__), "config.yaml"))
+                         config_path=os.path.join(os.path.dirname(__file__), "config_gunet.yaml"))

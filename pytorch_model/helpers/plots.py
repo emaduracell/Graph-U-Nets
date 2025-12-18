@@ -349,7 +349,7 @@ def make_final_plots(save_dir, train_losses, val_losses, grad_norms, model, acti
     feature_labels = ['Vel X', 'Vel Y', 'Vel Z', 'Stress'] if num_features == 4 else [f'Feat {i}' for i in
                                                                                       range(num_features)]
 
-    # 2. Load Config for Footer
+    # Load Config for Footer
     os.makedirs(save_dir, exist_ok=True)
     config = load_config(config_path)
     model_cfg = config['model']

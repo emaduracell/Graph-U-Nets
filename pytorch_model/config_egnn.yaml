@@ -1,0 +1,32 @@
+data:
+  tfrecord_path: "raw_data/train.tfrecord"
+  meta_path: "raw_data/meta.json"
+  output_dir: "data_egnn"
+  max_trajs: 2
+  normalization_method: "standard"
+  include_mesh_pos: True
+
+model:
+  hid_gnn_layer_dim: 128
+  depth: 4
+  act_gnn: "SiLU"
+  act_mlps_final: "SiLU"
+
+training:
+  mode: "overfit"           # 'standard' or 'overfit'
+  overfit_traj_id: 0        # ID of the trajectory to overfit
+  overfit_time_idx: [0, 1, 2] # List of time steps to train on (e.g., first 3 steps)
+
+  lr: 0.0001
+  gamma_lr_scheduler: 0.96
+  adam_weight_decay: 0.0
+  num_train_trajs: 1
+  batch_size: 1
+  shuffle: False            # Usually False for overfitting to keep order/debugging easier
+  epochs: 400
+  add_world_edges: "radius"
+  radius_world_edge: 0.03
+  k_neighb: 5
+  datapath: "data_egnn_standard_True/preprocessed_train.pt"
+  model_path: "checkpoints/egnn/"
+  random_seed: 42
