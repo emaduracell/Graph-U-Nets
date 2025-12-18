@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from helpers_egnn_model import exists
+from .helpers_egnn_model import exists
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 from torch import einsum
